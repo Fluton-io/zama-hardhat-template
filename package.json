@@ -16,6 +16,7 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.0.6",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.12",
+    "@nomicfoundation/hardhat-viem": "^2.0.6",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
@@ -59,6 +60,7 @@
     "typechain": "^8.2.0",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.0.1",
+    "viem": "^2.22.17",
     "web3-validator": "^2.0.6"
   },
   "files": [
@@ -84,7 +86,7 @@
     "lint": "pnpm lint:sol && pnpm lint:ts && pnpm prettier:check",
     "lint:sol": "solhint --max-warnings 25 \"contracts/**/*.sol\"",
     "lint:ts": "eslint .",
-    "postinstall": "DOTENV_CONFIG_PATH=./.env.example pnpm typechain",
+    "postinstall": "set DOTENV_CONFIG_PATH=./.env.example && pnpm typechain",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain",
