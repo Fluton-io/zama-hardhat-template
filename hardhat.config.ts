@@ -1,4 +1,5 @@
 import "@nomicfoundation/hardhat-toolbox";
+import "@nomicfoundation/hardhat-viem";
 import dotenv from "dotenv";
 import "hardhat-deploy";
 import "hardhat-ignore-warnings";
@@ -7,8 +8,13 @@ import { task } from "hardhat/config";
 import type { NetworkUserConfig } from "hardhat/types";
 
 import CustomProvider from "./CustomProvider";
+import "./tasks/ZamaBridge/bridge";
 // Adjust the import path as needed
 import "./tasks/accounts";
+import "./tasks/cERC20/approve";
+import "./tasks/cERC20/balanceOf";
+import "./tasks/cERC20/transferFrom";
+import "./tasks/cERC20/wrap";
 import "./tasks/etherscanVerify";
 import "./tasks/mintMyConfidentialERC20";
 import { setCodeMocked } from "./test/mockedSetup";
@@ -19,9 +25,6 @@ extendProvider(async (provider) => {
 });
 
 dotenv.config();
-
-// Ensure that we have all the environment variables we need.
-const mnemonic: string = process.env.MNEMONIC!;
 
 const chainIds = {
   zama: 8009,
@@ -46,11 +49,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
   }
   return {
-    accounts: {
-      count: 10,
-      mnemonic,
-      path: "m/44'/60'/0'/0",
-    },
+    accounts: [process.env.DEPLOYER_PRIVATE_KEY!, process.env.USER_PRIVATE_KEY!, process.env.RELAYER_PRIVATE_KEY!],
     chainId: chainIds[chain],
     url: jsonRpcUrl,
   };
@@ -72,9 +71,11 @@ task("test", async (_taskArgs, hre, runSuper) => {
 });
 
 const config: HardhatUserConfig = {
-  defaultNetwork: "hardhat",
+  defaultNetwork: "sepolia",
   namedAccounts: {
     deployer: 0,
+    user: 1,
+    relayer: 2,
   },
   mocha: {
     timeout: 500000,
@@ -86,13 +87,13 @@ const config: HardhatUserConfig = {
     src: "./contracts",
   },
   networks: {
-    hardhat: {
+    /*     hardhat: {
       accounts: {
         count: 10,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-    },
+    }, */
     sepolia: getChainConfig("sepolia"),
     zama: getChainConfig("zama"),
     localDev: getChainConfig("local"),
