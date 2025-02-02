@@ -7,13 +7,14 @@ import { GATEWAY_URL } from "../../config/constants";
 import { CUSDC } from "../../types";
 
 task("approve", "Approve cERC20 contract to spend USDC")
+  .addParam("signeraddress", "signer address")
   .addParam("tokenaddress", "cERC20 contract address")
-  .addParam("spender", "spender address")
+  .addParam("spenderaddress", "spender address")
   .addParam("amount", "amount to approve")
-  .setAction(async ({ tokenaddress, spender, amount }, hre) => {
+  .setAction(async ({ signeraddress, tokenaddress, spenderaddress, amount }, hre) => {
     const { ethers, getChainId } = hre;
     const chainId = await getChainId();
-    const [_, user] = await ethers.getSigners();
+    const signer = await ethers.getSigner(signeraddress);
 
     if (!addresses[+chainId]) {
       throw new Error("Chain ID not supported");
@@ -26,19 +27,17 @@ task("approve", "Approve cERC20 contract to spend USDC")
       gatewayUrl: GATEWAY_URL,
     });
 
-    const input = instance.createEncryptedInput(tokenaddress, user.address);
+    const input = instance.createEncryptedInput(tokenaddress, signer.address);
     const encryptedAmount = await input.add64(+amount).encrypt();
 
-    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress)) as unknown as CUSDC;
+    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress, signer)) as unknown as CUSDC;
 
     console.log("Approving spender to spend USDC");
-    const txHash = await cerc20
-      .connect(user)
-      .approve(
-        Typed.address(spender),
-        Typed.bytes32(encryptedAmount.handles[0]),
-        Typed.bytes(encryptedAmount.inputProof),
-      );
+    const txHash = await cerc20.approve(
+      Typed.address(spenderaddress),
+      Typed.bytes32(encryptedAmount.handles[0]),
+      Typed.bytes(encryptedAmount.inputProof),
+    );
 
     console.info("Approve tx receipt: ", txHash);
   });

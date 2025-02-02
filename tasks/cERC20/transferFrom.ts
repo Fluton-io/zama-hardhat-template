@@ -7,25 +7,22 @@ import { GATEWAY_URL } from "../../config/constants";
 import { CUSDC } from "../../types";
 
 task("transferFrom", "Transfer cERC20 tokens from one address to another")
+  .addParam("signeraddress", "signer address")
   .addParam("tokenaddress", "cERC20 contract address")
+  .addParam("to", "receiver address")
   .addOptionalParam("from", "sender address")
-  .addOptionalParam("to", "receiver address")
   .addOptionalParam("amount", "transfer amount", "1000000") // 1 cERC20
-  .setAction(async ({ tokenaddress, from, to, amount }, hre) => {
+  .setAction(async ({ signeraddress, tokenaddress, from, to, amount }, hre) => {
     const { ethers, getChainId } = hre;
     const chainId = await getChainId();
-    const [_, user, relayer] = await ethers.getSigners();
+    const signer = await ethers.getSigner(signeraddress);
 
     if (!addresses[+chainId]) {
       throw new Error("Chain ID not supported");
     }
 
     if (!from) {
-      from = user.address;
-    }
-
-    if (!to) {
-      to = relayer.address;
+      from = signer.address;
     }
 
     const instance = await createFhevmInstance({
@@ -35,20 +32,18 @@ task("transferFrom", "Transfer cERC20 tokens from one address to another")
       gatewayUrl: GATEWAY_URL,
     });
 
-    const input = instance.createEncryptedInput(tokenaddress, user.address);
+    const input = instance.createEncryptedInput(tokenaddress, signer.address);
     const encryptedAmount = await input.add64(+amount).encrypt();
 
-    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress)) as unknown as CUSDC;
+    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress, signer)) as unknown as CUSDC;
 
     console.log("Transferring...");
-    const txHash = await cerc20
-      .connect(user)
-      .transferFrom(
-        Typed.address(from),
-        Typed.address(to),
-        Typed.bytes32(encryptedAmount.handles[0]),
-        Typed.bytes(encryptedAmount.inputProof),
-      );
+    const txHash = await cerc20.transferFrom(
+      Typed.address(from),
+      Typed.address(to),
+      Typed.bytes32(encryptedAmount.handles[0]),
+      Typed.bytes(encryptedAmount.inputProof),
+    );
 
     console.info("Transfer from receipt: ", txHash);
   });

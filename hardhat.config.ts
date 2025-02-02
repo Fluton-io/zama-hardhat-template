@@ -8,15 +8,8 @@ import { task } from "hardhat/config";
 import type { NetworkUserConfig } from "hardhat/types";
 
 import CustomProvider from "./CustomProvider";
-import "./tasks/ZamaBridge/bridge";
+import "./tasks";
 // Adjust the import path as needed
-import "./tasks/accounts";
-import "./tasks/cERC20/approve";
-import "./tasks/cERC20/balanceOf";
-import "./tasks/cERC20/transferFrom";
-import "./tasks/cERC20/wrap";
-import "./tasks/etherscanVerify";
-import "./tasks/mintMyConfidentialERC20";
 import { setCodeMocked } from "./test/mockedSetup";
 
 extendProvider(async (provider) => {

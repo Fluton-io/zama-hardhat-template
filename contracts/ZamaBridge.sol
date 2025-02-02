@@ -34,6 +34,8 @@ contract ZamaBridge is SepoliaZamaFHEVMConfig, Ownable2Step {
         euint64 amount = TFHE.asEuint64(_encryptedAmount, _inputProof);
 
         TFHE.allow(amount, tokenAddress);
+        TFHE.allowThis(to);
+        TFHE.allowThis(amount);
 
         IConfidentialERC20(tokenAddress).transferFrom(msg.sender, address(this), amount);
 
@@ -51,6 +53,7 @@ contract ZamaBridge is SepoliaZamaFHEVMConfig, Ownable2Step {
     ) external {
         euint64 amount = TFHE.asEuint64(_encryptedAmount, inputProof);
         TFHE.allow(amount, tokenAddress);
+        // TFHE.allowTransient(amount, msg.sender); // is this needed? should we allow relayer or?
         IConfidentialERC20(tokenAddress).transferFrom(msg.sender, _to, amount);
 
         nextIntentId++;

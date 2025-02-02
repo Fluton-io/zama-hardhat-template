@@ -3,16 +3,17 @@ import { task } from "hardhat/config";
 import { CUSDC } from "../../types";
 
 task("wrap", "Wrap your erc20 into cERC20")
+  .addParam("signeraddress", "signer address")
   .addParam("tokenaddress", "cERC20 contract address")
-  .addParam("amount", "wrap amount")
-  .setAction(async ({ tokenaddress, amount }, hre) => {
+  .addOptionalParam("amount", "wrap amount", "1000000000000000000") // 1 ERC20
+  .setAction(async ({ signeraddress, tokenaddress, amount }, hre) => {
     const { ethers } = hre;
-    const [_, user] = await ethers.getSigners();
+    const signer = await ethers.getSigner(signeraddress);
 
-    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress)) as unknown as CUSDC;
+    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress, signer)) as unknown as CUSDC;
 
     console.log("Wrapping...");
-    const txHash = await cerc20.connect(user).wrap(amount);
+    const txHash = await cerc20.wrap(amount);
 
     console.info("Wrap tx receipt: ", txHash);
   });
