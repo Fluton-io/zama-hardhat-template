@@ -42,7 +42,7 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
       jsonRpcUrl = process.env.SEPOLIA_RPC_URL!;
   }
   return {
-    accounts: [process.env.DEPLOYER_PRIVATE_KEY!, process.env.USER_PRIVATE_KEY!, process.env.RELAYER_PRIVATE_KEY!],
+    accounts: [process.env.DEPLOYER_PRIVATE_KEY!, process.env.USER_PRIVATE_KEY!, process.env.RELAYER_PRIVATE_KEY!, process.env.FAUCET_PRIVATE_KEY!],
     chainId: chainIds[chain],
     url: jsonRpcUrl,
   };
