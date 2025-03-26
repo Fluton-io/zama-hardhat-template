@@ -9,6 +9,7 @@ import "fhevm/gateway/GatewayCaller.sol";
 import { IConfidentialERC20 } from "fhevm-contracts/contracts/token/ERC20/IConfidentialERC20.sol";
 import { IAaveConfidentialityAdapter } from "./IAaveConfidentialityAdapter.sol";
 import { IPool } from "@aave/core-v3/contracts/interfaces/IPool.sol";
+import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IScaledBalanceToken.sol";
 
 contract AaveConfidentialityAdapter is
     SepoliaZamaFHEVMConfig,
@@ -33,18 +34,21 @@ contract AaveConfidentialityAdapter is
     }
 
     struct SupplyRequestData {
+        address sender;
         address asset;
         euint64 amount;
         uint16 referralCode;
     }
 
     struct WithdrawRequestData {
+        address sender;
         address asset;
         euint64 amount;
         address to;
     }
 
     struct BorrowRequestData {
+        address sender;
         address asset;
         euint64 amount;
         uint256 interestRateMode;
@@ -52,6 +56,7 @@ contract AaveConfidentialityAdapter is
     }
 
     struct RepayRequestData {
+        address sender;
         address asset;
         euint64 amount;
         uint256 interestRateMode;
@@ -69,7 +74,7 @@ contract AaveConfidentialityAdapter is
     mapping(uint256 requestId => BorrowRequestData[]) public requestIdToBorrowRequests;
     mapping(uint256 requestId => RepayRequestData[]) public requestIdToRepayRequests;
     mapping(uint256 requestId => RequestData[]) public requestIdToRequestData;
-    mapping(uint256 requestId => uint256 amount) public requestIdToAmount;
+    mapping(address account => euint64 amount) public scaledBalances;
 
     modifier onlyCToken(address asset) {
         require(cTokenAddressToTokenAddress[asset] != address(0), "AaveConfidentialityAdapter: invalid asset");
@@ -115,7 +120,10 @@ contract AaveConfidentialityAdapter is
     }
 
     function withdrawRequest(address asset, euint64 amount, address to) public {
-        // @todo: check if the user has enough supplied balance
+        // check if the user has enough supplied balance
+        euint64 suppliedBalance = getSuppliedBalance(msg.sender, asset);
+        amount = TFHE.select(TFHE.le(amount, suppliedBalance), amount, TFHE.asEuint64(0));
+
         withdrawRequests.push(WithdrawRequestData(asset, amount, to));
         emit WithdrawRequested(asset, msg.sender, to, amount);
 
@@ -192,7 +200,6 @@ contract AaveConfidentialityAdapter is
         address asset = requests[0].asset;
         address cToken = tokenAddressToCTokenAddress[asset];
         IConfidentialERC20(cToken).unwrap(amount);
-        requestIdToAmount[requestId] = amount;
     }
 
     function callbackWithdrawRequest(uint256 requestId, uint256 amount) public virtual nonReentrant onlyGateway {
@@ -212,27 +219,35 @@ contract AaveConfidentialityAdapter is
 
         delete requestIdToWithdrawRequests[requestId];
         delete requestIdToRequestData[requestId];
-        delete requestIdToAmount[requestId];
     }
 
-    function onUnwrapComplete(uint256 requestId) public nonReentrant onlyCToken {
+    function onUnwrapComplete(uint256 requestId, uint256 amount) public nonReentrant onlyCToken {
         RequestData[] memory requestData = requestIdToRequestData[requestId];
-        uint256 amount = requestIdToAmount[requestId];
 
-        for (uint256 i = 0; i < requestData.length; i++) {
-            if (requestData[i].requestType == RequestType.SUPPLY) {
-                SupplyRequestData[] memory _supplyRequests = requestIdToSupplyRequests[requestId];
-                address asset = _supplyRequests[i].asset;
+        if (requestData[0].requestType == RequestType.SUPPLY) {
+            SupplyRequestData[] memory _supplyRequests = requestIdToSupplyRequests[requestId];
+            address asset = _supplyRequests[0].asset; // every asset address is the same for given request
 
-                IERC20(asset).approve(address(aavePool), amount);
-                aavePool.supply(asset, amount, address(this));
+            IERC20(asset).approve(address(aavePool), amount);
+
+            address aToken = aavePool.getReserveData(asset).aTokenAddress;
+            uint256 beforeScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
+            aavePool.supply(asset, amount, address(this));
+            uint256 afterScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
+            uint256 difference = afterScaledBalance - beforeScaledBalance;
+            uint256 multiplier = difference / amount;
+
+            for (uint256 i = 0; i < _supplyRequests.length; i++) {
+                euint64 accountScaledBalance = TFHE.mul(_supplyRequests[i].amount, multiplier);
+                scaledBalances[_supplyRequests[i].sender] = TFHE.add(
+                    scaledBalances[_supplyRequests[i].sender],
+                    accountScaledBalance
+                );
             }
-            // @todo: handle BORROW and REPAY
         }
 
         delete requestIdToSupplyRequests[requestId];
         delete requestIdToRequestData[requestId];
-        delete requestIdToAmount[requestId];
     }
 
     function _processSupplyRequests(SupplyRequestData[] memory srd) internal {
@@ -318,6 +333,11 @@ contract AaveConfidentialityAdapter is
 
         delete requestIdToBorrowRequests[requestId];
         delete requestIdToRequestData[requestId];
-        delete requestIdToAmount[requestId];
+    }
+
+    function getSuppliedBalance(address user, address asset) public view returns (euint64) {
+        euint64 scaledBalance = scaledBalances[user];
+        uint256 reserveNormalizedIncome = aavePool.getReserveNormalizedIncome(asset);
+        return TFHE.mul(scaledBalance, reserveNormalizedIncome);
     }
 }
