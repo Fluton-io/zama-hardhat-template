@@ -7,14 +7,10 @@ settings:
 importers:
 
   .:
-    dependencies:
+    devDependencies:
       '@aave/core-v3':
         specifier: ^1.19.3
         version: 1.19.3
-      '@openzeppelin/contracts':
-        specifier: ^5.0.2
-        version: 5.1.0
-    devDependencies:
       '@eslint/js':
         specifier: ^9.9.0
         version: 9.16.0
@@ -29,13 +25,16 @@ importers:
         version: 1.0.12(hardhat@2.22.17(ts-node@10.9.2(@types/node@18.19.68)(typescript@5.7.2))(typescript@5.7.2))
       '@nomicfoundation/hardhat-toolbox':
         specifier: ^5.0.0
-        version: 5.0.0(08b9e82d660ea244b6190a9a1dbd78ab)
+        version: 5.0.0(byv4k62pnqkuqo5wbwubih4eoe)
       '@nomicfoundation/hardhat-verify':
         specifier: ^2.0.12
         version: 2.0.12(hardhat@2.22.17(ts-node@10.9.2(@types/node@18.19.68)(typescript@5.7.2))(typescript@5.7.2))
       '@nomicfoundation/hardhat-viem':
         specifier: ^2.0.6
         version: 2.0.6(hardhat@2.22.17(ts-node@10.9.2(@types/node@18.19.68)(typescript@5.7.2))(typescript@5.7.2))(typescript@5.7.2)(viem@2.22.17(typescript@5.7.2)(zod@3.24.1))(zod@3.24.1)
+      '@openzeppelin/contracts':
+        specifier: ^5.0.2
+        version: 5.1.0
       '@trivago/prettier-plugin-sort-imports':
         specifier: ^4.0.0
         version: 4.3.0(prettier@2.8.8)
@@ -3992,7 +3991,7 @@ snapshots:
       ethereumjs-util: 7.1.5
       hardhat: 2.22.17(ts-node@10.9.2(@types/node@18.19.68)(typescript@5.7.2))(typescript@5.7.2)
 
-  '@nomicfoundation/hardhat-toolbox@5.0.0(08b9e82d660ea244b6190a9a1dbd78ab)':
+  '@nomicfoundation/hardhat-toolbox@5.0.0(byv4k62pnqkuqo5wbwubih4eoe)':
     dependencies:
       '@nomicfoundation/hardhat-chai-matchers': 2.0.8(@nomicfoundation/hardhat-ethers@3.0.8(ethers@6.13.4)(hardhat@2.22.17(ts-node@10.9.2(@types/node@18.19.68)(typescript@5.7.2))(typescript@5.7.2)))(chai@4.5.0)(ethers@6.13.4)(hardhat@2.22.17(ts-node@10.9.2(@types/node@18.19.68)(typescript@5.7.2))(typescript@5.7.2))
       '@nomicfoundation/hardhat-ethers': 3.0.8(ethers@6.13.4)(hardhat@2.22.17(ts-node@10.9.2(@types/node@18.19.68)(typescript@5.7.2))(typescript@5.7.2))
