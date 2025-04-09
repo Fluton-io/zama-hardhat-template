@@ -17,9 +17,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     throw new Error(`No addresses found for chainId ${chainId}`);
   }
 
+  const constructorArguments = [addresses[+chainId].AAVE_USDC, decryptionDelay];
+
   const deployed = await deploy("cUSDC", {
     from: deployer,
-    args: [addresses[+chainId].USDC, decryptionDelay],
+    args: constructorArguments,
     log: true,
   });
 
@@ -28,7 +30,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const verificationArgs = {
     address: deployed.address,
     contract: "contracts/cERC20.sol:cUSDC",
-    constructorArguments: [addresses[+chainId].USDC, decryptionDelay],
+    constructorArguments,
   };
 
   console.info("\nSubmitting verification request on Etherscan...");

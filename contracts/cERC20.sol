@@ -11,6 +11,8 @@ import { IConfidentialityAdapter } from "./confidentiality-adapters/IConfidentia
 /// @dev It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances,
 /// @dev but uses encrypted data types.
 contract cUSDC is SepoliaZamaFHEVMConfig, ConfidentialERC20Wrapped {
+    event OnUnwrapSuccessHook(uint256 requestId, uint256 amount);
+    event OnUnwrapFailHook(uint256 requestId, uint256 amount);
     /// @notice Constructor to initialize the token's name and symbol, and set up the owner
     /// @param erc20_ Address of the ERC20 token to wrap/unwrap.
     /// @param maxDecryptionDelay_ Maximum delay for the Gateway to decrypt. Use high values for production.
@@ -21,6 +23,7 @@ contract cUSDC is SepoliaZamaFHEVMConfig, ConfidentialERC20Wrapped {
         UnwrapRequest memory unwrapRequest = unwrapRequests[requestId];
 
         if (canUnwrap) {
+            /// @dev It does a supply adjustment.
             uint256 amountUint256 = unwrapRequest.amount * (10 ** (ERC20_TOKEN.decimals() - decimals()));
 
             try ERC20_TOKEN.transfer(unwrapRequest.account, amountUint256) {
@@ -28,11 +31,13 @@ contract cUSDC is SepoliaZamaFHEVMConfig, ConfidentialERC20Wrapped {
                 _totalSupply -= unwrapRequest.amount;
                 emit Unwrap(unwrapRequest.account, unwrapRequest.amount);
 
-                // 🚨 Custom hook to adapter after successful unwrap
-                try IConfidentialityAdapter(unwrapRequest.account).onUnwrapComplete(requestId, amountUint256) {
-                    // ok
-                } catch {
-                    emit UnwrapFailTransferFail(unwrapRequest.account, unwrapRequest.amount);
+                // Custom hook to adapter after successful unwrap
+                if (unwrapRequest.account.code.length > 0) {
+                    try IConfidentialityAdapter(unwrapRequest.account).onUnwrapComplete(requestId, amountUint256) {
+                        emit OnUnwrapSuccessHook(requestId, amountUint256);
+                    } catch {
+                        emit OnUnwrapFailHook(requestId, amountUint256);
+                    }
                 }
             } catch {
                 emit UnwrapFailTransferFail(unwrapRequest.account, unwrapRequest.amount);

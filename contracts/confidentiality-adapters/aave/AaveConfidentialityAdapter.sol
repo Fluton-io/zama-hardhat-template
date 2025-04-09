@@ -4,22 +4,24 @@ import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ReentrancyGuardTransient } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "fhevm/lib/TFHE.sol";
-import "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaFHEVMConfig } from "fhevm/config/ZamaFHEVMConfig.sol";
+import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm/gateway/GatewayCaller.sol";
 import { ConfidentialERC20Wrapped } from "../../zama/ConfidentialERC20Wrapped.sol";
 import { IAaveConfidentialityAdapter } from "./IAaveConfidentialityAdapter.sol";
 import { IPool } from "@aave/core-v3/contracts/interfaces/IPool.sol";
-import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IScaledBalanceToken.sol";
+import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IAToken.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 
 contract AaveConfidentialityAdapter is
     SepoliaZamaFHEVMConfig,
-    Ownable2Step,
+    SepoliaZamaGatewayConfig,
     GatewayCaller,
-    ReentrancyGuardTransient,
-    IAaveConfidentialityAdapter
+    Ownable2Step,
+    IAaveConfidentialityAdapter,
+    ReentrancyGuardTransient
 {
-    uint8 public REQUEST_THRESHOLD = 3;
+    uint8 public REQUEST_THRESHOLD = 2;
     IPool public aavePool;
 
     enum RequestType {
@@ -103,12 +105,27 @@ contract AaveConfidentialityAdapter is
     function supplyRequest(address asset, euint64 amount, uint16 referralCode) public {
         address cToken = tokenAddressToCTokenAddress[asset];
         require(cToken != address(0), "AaveConfidentialityAdapter: invalid asset");
+
+        TFHE.allow(amount, cToken);
         require(
             ConfidentialERC20Wrapped(cToken).transferFrom(msg.sender, address(this), amount),
             "AaveConfidentialityAdapter: transfer failed"
         );
         supplyRequests.push(SupplyRequestData(msg.sender, asset, amount, referralCode));
+        TFHE.allow(supplyRequests[supplyRequests.length - 1].amount, msg.sender);
+        TFHE.allowThis(supplyRequests[supplyRequests.length - 1].amount);
+
+        // initialize scaledBalance
+        if (!TFHE.isInitialized(scaledBalances[msg.sender])) {
+            scaledBalances[msg.sender] = TFHE.asEuint64(0);
+            TFHE.allowThis(scaledBalances[msg.sender]);
+        }
+
         emit SupplyRequested(asset, msg.sender, msg.sender, amount, referralCode);
+
+        if (supplyRequests.length < REQUEST_THRESHOLD) {
+            return;
+        }
 
         SupplyRequestData[] memory requests = new SupplyRequestData[](REQUEST_THRESHOLD);
 
@@ -116,10 +133,15 @@ contract AaveConfidentialityAdapter is
             SupplyRequestData memory srd = supplyRequests[i];
             if (srd.asset == asset) {
                 requests[i] = srd;
+                TFHE.allow(requests[i].amount, msg.sender);
+                TFHE.allowThis(requests[i].amount);
             }
         }
 
-        if (requests.length > REQUEST_THRESHOLD) {
+        TFHE.allowThis(ConfidentialERC20Wrapped(cToken).balanceOf(address(this)));
+        TFHE.allow(ConfidentialERC20Wrapped(cToken).balanceOf(address(this)), msg.sender);
+
+        if (requests.length >= REQUEST_THRESHOLD) {
             _processSupplyRequests(requests);
         }
     }
@@ -136,6 +158,10 @@ contract AaveConfidentialityAdapter is
         withdrawRequests.push(WithdrawRequestData(msg.sender, asset, amount, to));
         emit WithdrawRequested(asset, msg.sender, to, amount);
 
+        if (withdrawRequests.length < REQUEST_THRESHOLD) {
+            return;
+        }
+
         WithdrawRequestData[] memory requests = new WithdrawRequestData[](REQUEST_THRESHOLD);
 
         for (uint256 i = 0; i < REQUEST_THRESHOLD; i++) {
@@ -145,7 +171,7 @@ contract AaveConfidentialityAdapter is
             }
         }
 
-        if (requests.length > REQUEST_THRESHOLD) {
+        if (requests.length >= REQUEST_THRESHOLD) {
             _processWithdrawRequests(requests);
         }
     }
@@ -163,6 +189,10 @@ contract AaveConfidentialityAdapter is
         borrowRequests.push(BorrowRequestData(msg.sender, asset, amount, interestRateMode, referralCode));
         emit BorrowRequested(asset, msg.sender, msg.sender, amount, interestRateMode, 0, referralCode);
 
+        if (borrowRequests.length < REQUEST_THRESHOLD) {
+            return;
+        }
+
         BorrowRequestData[] memory requests = new BorrowRequestData[](REQUEST_THRESHOLD);
 
         for (uint256 i = 0; i < REQUEST_THRESHOLD; i++) {
@@ -172,7 +202,7 @@ contract AaveConfidentialityAdapter is
             }
         }
 
-        if (requests.length > REQUEST_THRESHOLD) {
+        if (requests.length >= REQUEST_THRESHOLD) {
             _processBorrowRequests(requests);
         }
     }
@@ -191,6 +221,10 @@ contract AaveConfidentialityAdapter is
         repayRequests.push(RepayRequestData(msg.sender, asset, amount, interestRateMode));
         emit RepayRequested(asset, msg.sender, msg.sender, amount, false);
 
+        if (repayRequests.length < REQUEST_THRESHOLD) {
+            return;
+        }
+
         RepayRequestData[] memory requests = new RepayRequestData[](REQUEST_THRESHOLD);
 
         for (uint256 i = 0; i < REQUEST_THRESHOLD; i++) {
@@ -200,7 +234,7 @@ contract AaveConfidentialityAdapter is
             }
         }
 
-        if (repayRequests.length > REQUEST_THRESHOLD) {
+        if (repayRequests.length >= REQUEST_THRESHOLD) {
             _processRepayRequests(requests);
         }
     }
@@ -223,11 +257,15 @@ contract AaveConfidentialityAdapter is
         aavePool = IPool(aavePoolContract);
     }
 
-    function callbackSupplyRequest(uint256 requestId, uint256 amount) public virtual nonReentrant onlyGateway {
+    function callbackSupplyRequest(uint256 requestId, uint64 amount) public virtual nonReentrant onlyGateway {
         SupplyRequestData[] memory requests = requestIdToSupplyRequests[requestId];
         address asset = requests[0].asset;
         address cToken = tokenAddressToCTokenAddress[asset];
-        ConfidentialERC20Wrapped(cToken).unwrap(uint64(amount));
+        ConfidentialERC20Wrapped(cToken).unwrap(amount);
+
+        IERC20(asset).approve(address(aavePool), amount);
+
+        emit SupplyCallback(asset, amount);
     }
 
     function callbackWithdrawRequest(uint256 requestId, uint256 amount) public virtual nonReentrant onlyGateway {
@@ -287,41 +325,51 @@ contract AaveConfidentialityAdapter is
     }
 
     function onUnwrapComplete(uint256 requestId, uint256 amount) public nonReentrant onlyCToken {
-        RequestData memory requestData = requestIdToRequestData[requestId];
+        // @todo: requestId - 1 might not work every time. Find a better fix.
+        RequestData memory requestData = requestIdToRequestData[requestId - 1];
 
         if (requestData.requestType == RequestType.SUPPLY) {
-            SupplyRequestData[] memory _supplyRequests = requestIdToSupplyRequests[requestId];
+            SupplyRequestData[] storage _supplyRequests = requestIdToSupplyRequests[requestId - 1];
             address asset = _supplyRequests[0].asset; // every asset address is the same for given request
-
-            IERC20(asset).approve(address(aavePool), amount);
-
             address aToken = aavePool.getReserveData(asset).aTokenAddress;
+            // address cToken = tokenAddressToCTokenAddress[asset];
             uint256 beforeScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
+
             aavePool.supply(asset, amount, address(this), _supplyRequests[0].referralCode);
+
             uint256 afterScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
             uint256 difference = afterScaledBalance - beforeScaledBalance;
-            uint256 multiplier = difference / amount;
+            uint256 multiplier = difference / (amount / (10 ** 6));
 
+            // update scaled balances
             for (uint256 i = 0; i < _supplyRequests.length; i++) {
-                euint64 accountScaledBalance = TFHE.mul(_supplyRequests[i].amount, uint64(multiplier));
-                scaledBalances[_supplyRequests[i].sender] = TFHE.add(
+                euint64 newBalance = TFHE.add(
                     scaledBalances[_supplyRequests[i].sender],
-                    accountScaledBalance
+                    TFHE.mul(_supplyRequests[i].amount, uint64(multiplier))
                 );
+                scaledBalances[_supplyRequests[i].sender] = newBalance;
+                TFHE.allowThis(newBalance);
+                // uncomment the line below when the gas limit is increased on Zama's side.
+                // TFHE.allow(newBalance, _supplyRequests[i].sender);
             }
         }
 
-        delete requestIdToSupplyRequests[requestId];
-        delete requestIdToRequestData[requestId];
+        delete requestIdToSupplyRequests[requestId - 1];
+        delete requestIdToRequestData[requestId - 1];
+    }
+
+    function test() public {
+        TFHE.allow(scaledBalances[msg.sender], msg.sender);
     }
 
     function _processSupplyRequests(SupplyRequestData[] memory srd) internal {
         uint256[] memory cts = new uint256[](1);
         euint64 totalAmount = TFHE.asEuint64(0);
+
         for (uint256 i = 0; i < srd.length; i++) {
-            SupplyRequestData memory request = srd[i];
-            totalAmount = TFHE.add(totalAmount, request.amount);
+            totalAmount = TFHE.add(totalAmount, srd[i].amount);
         }
+
         cts[0] = Gateway.toUint256(totalAmount);
         uint256 requestId = Gateway.requestDecryption(
             cts,
@@ -330,10 +378,17 @@ contract AaveConfidentialityAdapter is
             block.timestamp + 100,
             false
         );
+
         for (uint256 i = 0; i < srd.length; i++) {
             requestIdToSupplyRequests[requestId].push(srd[i]);
         }
+
         requestIdToRequestData[requestId] = RequestData(RequestType.SUPPLY, abi.encode(srd));
+
+        // clean supplyRequests array
+        for (uint256 i = 0; i < srd.length; i++) {
+            supplyRequests.pop();
+        }
     }
 
     function _processWithdrawRequests(WithdrawRequestData[] memory wrd) internal {
@@ -419,4 +474,6 @@ contract AaveConfidentialityAdapter is
         uint256 reserveNormalizedIncome = aavePool.getReserveNormalizedIncome(asset);
         return TFHE.asEuint64(TFHE.div(TFHE.mul(TFHE.asEuint256(scaledBalance), reserveNormalizedIncome), 1e27)); // ray format
     } */
+
+    receive() external payable {}
 }
