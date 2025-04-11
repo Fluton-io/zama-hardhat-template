@@ -5,7 +5,6 @@ pragma solidity ^0.8.24;
 import "fhevm/lib/TFHE.sol";
 import "fhevm/config/ZamaFHEVMConfig.sol";
 import "./zama/ConfidentialERC20Wrapped.sol";
-import { IConfidentialityAdapter } from "./confidentiality-adapters/IConfidentialityAdapter.sol";
 
 /// @notice This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE library.
 /// @dev It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances,
@@ -33,7 +32,7 @@ contract cUSDC is SepoliaZamaFHEVMConfig, ConfidentialERC20Wrapped {
 
                 // Custom hook to adapter after successful unwrap
                 if (unwrapRequest.account.code.length > 0) {
-                    try IConfidentialityAdapter(unwrapRequest.account).onUnwrapComplete(requestId, amountUint256) {
+                    try IUnwrapReceiver(unwrapRequest.account).onUnwrap(requestId, amountUint256) {
                         emit OnUnwrapSuccessHook(requestId, amountUint256);
                     } catch {
                         emit OnUnwrapFailHook(requestId, amountUint256);
@@ -49,4 +48,9 @@ contract cUSDC is SepoliaZamaFHEVMConfig, ConfidentialERC20Wrapped {
         delete unwrapRequests[requestId];
         delete isAccountRestricted[unwrapRequest.account];
     }
+}
+
+interface IUnwrapReceiver {
+    // function executeConfidential(einput encryptedData, bytes calldata inputProof) external;
+    function onUnwrap(uint256 requestId, uint256 amount) external;
 }

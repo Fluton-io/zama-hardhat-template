@@ -324,7 +324,7 @@ contract AaveConfidentialityAdapter is
         delete requestIdToRequestData[requestId];
     }
 
-    function onUnwrapComplete(uint256 requestId, uint256 amount) public nonReentrant onlyCToken {
+    function onUnwrap(uint256 requestId, uint256 amount) external nonReentrant onlyCToken {
         // @todo: requestId - 1 might not work every time. Find a better fix.
         RequestData memory requestData = requestIdToRequestData[requestId - 1];
 
@@ -332,7 +332,6 @@ contract AaveConfidentialityAdapter is
             SupplyRequestData[] storage _supplyRequests = requestIdToSupplyRequests[requestId - 1];
             address asset = _supplyRequests[0].asset; // every asset address is the same for given request
             address aToken = aavePool.getReserveData(asset).aTokenAddress;
-            // address cToken = tokenAddressToCTokenAddress[asset];
             uint256 beforeScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
 
             aavePool.supply(asset, amount, address(this), _supplyRequests[0].referralCode);
