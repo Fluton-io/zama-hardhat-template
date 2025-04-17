@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
@@ -129,7 +130,7 @@ contract AaveConfidentialityAdapter is
 
         SupplyRequestData[] memory requests = new SupplyRequestData[](REQUEST_THRESHOLD);
 
-        for (uint256 i = 0; i < REQUEST_THRESHOLD; i++) {
+        for (uint256 i = 0; i < supplyRequests.length; i++) {
             SupplyRequestData memory srd = supplyRequests[i];
             if (srd.asset == asset) {
                 requests[i] = srd;
@@ -471,7 +472,9 @@ contract AaveConfidentialityAdapter is
     /*     function getSuppliedBalance(address user, address asset) public view returns (euint64) {
         euint64 scaledBalance = scaledBalances[user];
         uint256 reserveNormalizedIncome = aavePool.getReserveNormalizedIncome(asset);
-        return TFHE.asEuint64(TFHE.div(TFHE.mul(TFHE.asEuint256(scaledBalance), reserveNormalizedIncome), 1e27)); // ray format
+        uint256 scaledProduct = TFHE.mul(TFHE.asEuint256(scaledBalance), reserveNormalizedIncome);
+        uint256 scaledResult = TFHE.div(scaledProduct, 1e27); // ray format
+        return TFHE.asEuint64(scaledResult);
     } */
 
     receive() external payable {}
