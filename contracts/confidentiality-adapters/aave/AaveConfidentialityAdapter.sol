@@ -129,13 +129,23 @@ contract AaveConfidentialityAdapter is
         }
 
         SupplyRequestData[] memory requests = new SupplyRequestData[](REQUEST_THRESHOLD);
+        uint256[] memory matchedIndexes = new uint256[](REQUEST_THRESHOLD);
+        uint256 count = 0;
 
         for (uint256 i = 0; i < supplyRequests.length; i++) {
             SupplyRequestData memory srd = supplyRequests[i];
             if (srd.asset == asset) {
-                requests[i] = srd;
-                TFHE.allow(requests[i].amount, msg.sender);
-                TFHE.allowThis(requests[i].amount);
+                requests[count] = srd;
+                matchedIndexes[count] = i;
+
+                TFHE.allow(requests[count].amount, msg.sender);
+                TFHE.allowThis(requests[count].amount);
+
+                unchecked {
+                    count++;
+                }
+
+                if (count == REQUEST_THRESHOLD) break;
             }
         }
 
@@ -143,7 +153,7 @@ contract AaveConfidentialityAdapter is
         TFHE.allow(ConfidentialERC20Wrapped(cToken).balanceOf(address(this)), msg.sender);
 
         if (requests.length >= REQUEST_THRESHOLD) {
-            _processSupplyRequests(requests);
+            _processSupplyRequests(requests, matchedIndexes);
         }
     }
 
@@ -362,7 +372,7 @@ contract AaveConfidentialityAdapter is
         TFHE.allow(scaledBalances[msg.sender], msg.sender);
     }
 
-    function _processSupplyRequests(SupplyRequestData[] memory srd) internal {
+    function _processSupplyRequests(SupplyRequestData[] memory srd, uint256[] memory indexes) internal {
         uint256[] memory cts = new uint256[](1);
         euint64 totalAmount = TFHE.asEuint64(0);
 
@@ -386,7 +396,9 @@ contract AaveConfidentialityAdapter is
         requestIdToRequestData[requestId] = RequestData(RequestType.SUPPLY, abi.encode(srd));
 
         // clean supplyRequests array
-        for (uint256 i = 0; i < srd.length; i++) {
+        for (uint256 i = indexes.length; i > 0; i--) {
+            uint256 idx = indexes[i - 1];
+            supplyRequests[idx] = supplyRequests[supplyRequests.length - 1];
             supplyRequests.pop();
         }
     }

@@ -14,6 +14,9 @@ task("wrap", "Wrap your erc20 into cERC20")
 
     console.log("Wrapping...");
     const txHash = await cerc20.wrap(amount);
+    console.log("Transaction hash:", txHash.hash);
 
-    console.info("Wrap tx receipt: ", txHash);
+    const tx = await txHash.wait();
+    console.log("Transaction mined in block:", tx?.blockNumber);
+    console.log("Transaction receipt:", tx);
   });
