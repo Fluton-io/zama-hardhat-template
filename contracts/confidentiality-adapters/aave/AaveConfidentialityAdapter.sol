@@ -78,6 +78,8 @@ contract AaveConfidentialityAdapter is
     mapping(uint256 requestId => BorrowRequestData[]) public requestIdToBorrowRequests;
     mapping(uint256 requestId => RepayRequestData[]) public requestIdToRepayRequests;
     mapping(uint256 requestId => RequestData) public requestIdToRequestData;
+    mapping(uint256 requestId => uint256 amount) public requestIdToAmount;
+    mapping(uint256 supplyRequestId => uint256 unwrapRequestId) public requestIdToUnwrapRequestId;
     mapping(address account => euint64 amount) public scaledBalances;
 
     modifier onlyCToken() {
@@ -336,36 +338,42 @@ contract AaveConfidentialityAdapter is
     }
 
     function onUnwrap(uint256 requestId, uint256 amount) external nonReentrant onlyCToken {
-        // @todo: requestId - 1 might not work every time. Find a better fix.
-        RequestData memory requestData = requestIdToRequestData[requestId - 1];
-
-        if (requestData.requestType == RequestType.SUPPLY) {
-            SupplyRequestData[] storage _supplyRequests = requestIdToSupplyRequests[requestId - 1];
-            address asset = _supplyRequests[0].asset; // every asset address is the same for given request
-            address aToken = aavePool.getReserveData(asset).aTokenAddress;
-            uint256 beforeScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
-
-            aavePool.supply(asset, amount, address(this), _supplyRequests[0].referralCode);
-
-            uint256 afterScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
-            uint256 difference = afterScaledBalance - beforeScaledBalance;
-            uint256 multiplier = difference / (amount / (10 ** 6));
-
-            // update scaled balances
-            for (uint256 i = 0; i < _supplyRequests.length; i++) {
-                euint64 newBalance = TFHE.add(
-                    scaledBalances[_supplyRequests[i].sender],
-                    TFHE.mul(_supplyRequests[i].amount, uint64(multiplier))
-                );
-                scaledBalances[_supplyRequests[i].sender] = newBalance;
-                TFHE.allowThis(newBalance);
-                // uncomment the line below when the gas limit is increased on Zama's side.
-                // TFHE.allow(newBalance, _supplyRequests[i].sender);
+        requestIdToAmount[requestId] = amount;
+        for (uint256 i = requestId - 1; i > 0; i--) {
+            if (requestIdToSupplyRequests[i].length > 0) {
+                requestIdToUnwrapRequestId[i] = requestId;
+                break;
             }
         }
+        emit OnUnwrap(requestId, amount);
+    }
 
-        delete requestIdToSupplyRequests[requestId - 1];
-        delete requestIdToRequestData[requestId - 1];
+    function finalizeSupplyRequests(uint256 supplyRequestId) external {
+        SupplyRequestData[] memory requests = requestIdToSupplyRequests[supplyRequestId];
+        require(requests.length >= REQUEST_THRESHOLD, "AaveConfidentialityAdapter: not enough supply requests");
+        uint256 unwrapRequestId = requestIdToUnwrapRequestId[supplyRequestId];
+        uint256 amount = requestIdToAmount[unwrapRequestId];
+        require(amount > 0, "AaveConfidentialityAdapter: invalid amount");
+        address asset = requests[0].asset; // every asset address is the same for given request
+        address aToken = aavePool.getReserveData(asset).aTokenAddress;
+        uint256 beforeScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
+        aavePool.supply(asset, amount, address(this), requests[0].referralCode);
+        uint256 afterScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
+        uint256 difference = afterScaledBalance - beforeScaledBalance;
+        uint256 multiplier = difference / (amount / (10 ** 6));
+        // update scaled balances
+        for (uint256 i = 0; i < requests.length; i++) {
+            euint64 newBalance = TFHE.add(
+                scaledBalances[requests[i].sender],
+                TFHE.div(TFHE.mul(requests[i].amount, uint64(multiplier)), 1e6)
+            );
+            scaledBalances[requests[i].sender] = newBalance;
+            TFHE.allowThis(newBalance);
+            TFHE.allow(newBalance, requests[i].sender);
+        }
+        delete requestIdToSupplyRequests[supplyRequestId];
+        delete requestIdToRequestData[supplyRequestId];
+        delete requestIdToAmount[unwrapRequestId];
     }
 
     function test() public {

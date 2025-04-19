@@ -14,7 +14,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const constructorArguments = [
     addresses[+chainId].AAVE_POOL,
     [addresses[+chainId].AAVE_USDC], // aave usdc,
-    ["0xcEFC210aD937D99f2a341B0E25A6033b427802Ce"], // cusdc,
+    ["0x674C2920aAfb17400101247dFc475902a40637b1"], // cusdc,
   ];
 
   const deployed = await deploy("AaveConfidentialityAdapter", {
