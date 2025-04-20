@@ -35,7 +35,7 @@ interface IAaveConfidentialityAdapter is IConfidentialityAdapter {
         bool useATokens
     );
 
-    event SupplyCallback(address indexed reserve, uint64 amount);
+    event SupplyCallback(address indexed reserve, uint64 amount, uint256 requestId);
 
     function supplyRequest(address asset, euint64 amount, uint16 referralCode) external;
     function supplyRequest(address asset, einput amount, uint16 referralCode, bytes calldata inputProof) external;
