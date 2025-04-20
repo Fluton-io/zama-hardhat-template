@@ -81,6 +81,7 @@ contract AaveConfidentialityAdapter is
     mapping(uint256 requestId => uint256 amount) public requestIdToAmount;
     mapping(uint256 supplyRequestId => uint256 unwrapRequestId) public requestIdToUnwrapRequestId;
     mapping(address account => euint64 amount) public scaledBalances;
+    mapping(address => mapping(address => euint64)) public userDebts;
 
     modifier onlyCToken() {
         address[] memory aaveSupportedTokens = aavePool.getReservesList();
@@ -199,24 +200,44 @@ contract AaveConfidentialityAdapter is
         DataTypes.InterestRateMode interestRateMode,
         uint16 referralCode
     ) public {
-        borrowRequests.push(BorrowRequestData(msg.sender, asset, amount, interestRateMode, referralCode));
-        emit BorrowRequested(asset, msg.sender, msg.sender, amount, interestRateMode, 0, referralCode);
+        // check user's balance
+        euint64 userBalance = scaledBalances[msg.sender];
+        euint64 checkedAmount = TFHE.select(TFHE.le(amount, userBalance), amount, TFHE.asEuint64(0));
+
+        borrowRequests.push(BorrowRequestData(msg.sender, asset, checkedAmount, interestRateMode, referralCode));
+        TFHE.allow(borrowRequests[borrowRequests.length - 1].amount, msg.sender);
+        TFHE.allowThis(borrowRequests[borrowRequests.length - 1].amount);
+
+        emit BorrowRequested(asset, msg.sender, msg.sender, checkedAmount, interestRateMode, 0, referralCode);
 
         if (borrowRequests.length < REQUEST_THRESHOLD) {
             return;
         }
 
         BorrowRequestData[] memory requests = new BorrowRequestData[](REQUEST_THRESHOLD);
+        uint256[] memory matchedIndexes = new uint256[](REQUEST_THRESHOLD);
+        uint8 count = 0;
 
-        for (uint256 i = 0; i < REQUEST_THRESHOLD; i++) {
+        for (uint256 i = 0; i < borrowRequests.length; i++) {
             BorrowRequestData memory brd = borrowRequests[i];
-            if (brd.asset == asset) {
-                requests[i] = brd;
+            if (brd.asset == asset && brd.interestRateMode == interestRateMode) {
+                requests[count] = brd;
+                matchedIndexes[count] = i;
+
+                // update user's debt
+                userDebts[msg.sender][asset] = TFHE.add(userDebts[msg.sender][asset], brd.amount);
+                TFHE.allow(userDebts[msg.sender][asset], msg.sender);
+                TFHE.allowThis(userDebts[msg.sender][asset]);
+
+                unchecked {
+                    count++;
+                }
+                if (count == REQUEST_THRESHOLD) break;
             }
         }
 
         if (requests.length >= REQUEST_THRESHOLD) {
-            _processBorrowRequests(requests);
+            _processBorrowRequests(requests, matchedIndexes);
         }
     }
 
@@ -231,24 +252,50 @@ contract AaveConfidentialityAdapter is
     }
 
     function repayRequest(address asset, euint64 amount, DataTypes.InterestRateMode interestRateMode) public {
-        repayRequests.push(RepayRequestData(msg.sender, asset, amount, interestRateMode));
-        emit RepayRequested(asset, msg.sender, msg.sender, amount, false);
+        euint64 userDebt = userDebts[msg.sender][asset];
+        euint64 checkedAmount = TFHE.select(TFHE.le(amount, userDebt), amount, TFHE.asEuint64(0));
+
+        address cToken = tokenAddressToCTokenAddress[asset];
+        require(cToken != address(0), "AaveConfidentialityAdapter: invalid asset");
+
+        TFHE.allow(checkedAmount, cToken);
+        require(
+            ConfidentialERC20Wrapped(cToken).transferFrom(msg.sender, address(this), checkedAmount),
+            "AaveConfidentialityAdapter: transfer failed"
+        );
+        TFHE.allowThis(checkedAmount);
+
+        repayRequests.push(RepayRequestData(msg.sender, asset, checkedAmount, interestRateMode));
+        emit RepayRequested(asset, msg.sender, msg.sender, checkedAmount, false);
 
         if (repayRequests.length < REQUEST_THRESHOLD) {
             return;
         }
 
         RepayRequestData[] memory requests = new RepayRequestData[](REQUEST_THRESHOLD);
+        uint256[] memory matchedIndexes = new uint256[](REQUEST_THRESHOLD);
+        uint8 count = 0;
 
         for (uint256 i = 0; i < REQUEST_THRESHOLD; i++) {
             RepayRequestData memory rrd = repayRequests[i];
-            if (rrd.asset == asset) {
+            if (rrd.asset == asset && rrd.interestRateMode == interestRateMode) {
                 requests[i] = rrd;
+                matchedIndexes[count] = i;
+
+                // update user's debt
+                userDebts[msg.sender][asset] = TFHE.sub(userDebts[msg.sender][asset], rrd.amount);
+                TFHE.allow(userDebts[msg.sender][asset], msg.sender);
+                TFHE.allowThis(userDebts[msg.sender][asset]);
+
+                unchecked {
+                    count++;
+                }
+                if (count == REQUEST_THRESHOLD) break;
             }
         }
 
         if (repayRequests.length >= REQUEST_THRESHOLD) {
-            _processRepayRequests(requests);
+            _processRepayRequests(requests, matchedIndexes);
         }
     }
 
@@ -302,18 +349,39 @@ contract AaveConfidentialityAdapter is
 
     function callbackBorrowRequest(uint256 requestId, uint256 amount) public virtual nonReentrant onlyGateway {
         BorrowRequestData[] memory requests = requestIdToBorrowRequests[requestId];
+
         address asset = requests[0].asset;
         DataTypes.InterestRateMode interestRateMode = requests[0].interestRateMode;
         uint16 referralCode = requests[0].referralCode;
 
         aavePool.borrow(asset, amount, uint256(interestRateMode), referralCode, address(this));
 
+        requestIdToRequestData[requestId] = RequestData(RequestType.BORROW, abi.encode(requests));
+
+        emit BorrowCallback(asset, uint64(amount));
+    }
+
+    function finalizeBorrow(uint256 requestId, uint256 amount) public nonReentrant {
+        RequestData memory requestData = requestIdToRequestData[requestId];
+        require(requestData.requestType == RequestType.BORROW, "Not a borrow request");
+
+        BorrowRequestData[] memory requests = abi.decode(requestData.data, (BorrowRequestData[]));
+        address asset = requests[0].asset;
         address cToken = tokenAddressToCTokenAddress[asset];
+
+        // Wrap and transfer tokens
         IERC20(asset).approve(cToken, amount);
         ConfidentialERC20Wrapped(cToken).wrap(amount);
 
         for (uint256 i = 0; i < requests.length; i++) {
             address to = requests[i].sender;
+            // increase user's debt
+            userDebts[to][asset] = TFHE.add(userDebts[to][asset], requests[i].amount);
+
+            TFHE.allow(userDebts[to][asset], to);
+            TFHE.allowThis(userDebts[to][asset]);
+            TFHE.allow(requests[i].amount, cToken);
+
             ConfidentialERC20Wrapped(cToken).transfer(to, requests[i].amount);
         }
 
@@ -331,10 +399,8 @@ contract AaveConfidentialityAdapter is
 
         // Approve and repay to Aave pool
         IERC20(asset).approve(address(aavePool), amount);
-        aavePool.repay(asset, amount, uint256(requests[0].interestRateMode), address(this));
 
-        delete requestIdToRepayRequests[requestId];
-        delete requestIdToRequestData[requestId];
+        emit RepayCallback(asset, uint64(amount));
     }
 
     function onUnwrap(uint256 requestId, uint256 amount) external nonReentrant onlyCToken {
@@ -436,7 +502,7 @@ contract AaveConfidentialityAdapter is
         requestIdToRequestData[requestId] = RequestData(RequestType.WITHDRAW, abi.encode(wrd));
     }
 
-    function _processBorrowRequests(BorrowRequestData[] memory brd) internal {
+    function _processBorrowRequests(BorrowRequestData[] memory brd, uint256[] memory matchedIndexes) internal {
         uint256[] memory cts = new uint256[](1);
         euint64 totalAmount = TFHE.asEuint64(0);
 
@@ -460,9 +526,16 @@ contract AaveConfidentialityAdapter is
         }
 
         requestIdToRequestData[requestId] = RequestData(RequestType.BORROW, abi.encode(brd));
+
+        // clean borrowRequests array
+        for (uint256 i = matchedIndexes.length; i > 0; i--) {
+            uint256 idx = matchedIndexes[i - 1];
+            borrowRequests[idx] = borrowRequests[borrowRequests.length - 1];
+            borrowRequests.pop();
+        }
     }
 
-    function _processRepayRequests(RepayRequestData[] memory rrd) internal {
+    function _processRepayRequests(RepayRequestData[] memory rrd, uint256[] memory matchedIndexes) internal {
         uint256[] memory cts = new uint256[](1);
         euint64 totalAmount = TFHE.asEuint64(0);
 
@@ -486,6 +559,13 @@ contract AaveConfidentialityAdapter is
         }
 
         requestIdToRequestData[requestId] = RequestData(RequestType.REPAY, abi.encode(rrd));
+
+        // clean repayRequests array
+        for (uint256 i = matchedIndexes.length; i > 0; i--) {
+            uint256 idx = matchedIndexes[i - 1];
+            repayRequests[idx] = repayRequests[repayRequests.length - 1];
+            repayRequests.pop();
+        }
     }
 
     //@todo: can't make this function view because it modifies the state?

@@ -14,7 +14,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const constructorArguments = [
     addresses[+chainId].AAVE_POOL,
     [addresses[+chainId].AAVE_USDC], // aave usdc,
-    ["0x674C2920aAfb17400101247dFc475902a40637b1"], // cusdc,
+    ["0x4A644e2dA7B7b3ff57Afc4a50aE4Bc9f4628B4a4"], // cusdc,
   ];
 
   const deployed = await deploy("AaveConfidentialityAdapter", {
@@ -24,7 +24,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
 
   console.log(`AaveConfidentialityAdapter contract: `, deployed.address);
-
+  /* 
   const verificationArgs = {
     address: deployed.address,
     contract: "contracts/confidentiality-adapters/aave/AaveConfidentialityAdapter.sol:AaveConfidentialityAdapter",
@@ -33,7 +33,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   console.info("\nSubmitting verification request on Etherscan...");
   await sleep(40000); // wait for etherscan to index the contract
-  await hre.run("verify:verify", verificationArgs);
+  await hre.run("verify:verify", verificationArgs); */
 };
 
 export default func;
