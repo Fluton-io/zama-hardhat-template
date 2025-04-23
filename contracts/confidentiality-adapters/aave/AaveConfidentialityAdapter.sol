@@ -325,7 +325,7 @@ contract AaveConfidentialityAdapter is
 
         IERC20(asset).approve(address(aavePool), amount);
 
-        emit SupplyCallback(asset, amount);
+        emit SupplyCallback(asset, amount, requestId);
     }
 
     function callbackWithdrawRequest(uint256 requestId, uint256 amount) public virtual nonReentrant onlyGateway {
@@ -406,6 +406,7 @@ contract AaveConfidentialityAdapter is
     function onUnwrap(uint256 requestId, uint256 amount) external nonReentrant onlyCToken {
         requestIdToAmount[requestId] = amount;
         for (uint256 i = requestId - 1; i > 0; i--) {
+            // @todo: make sure this doesn't overlap with other requestId
             if (requestIdToSupplyRequests[i].length > 0) {
                 requestIdToUnwrapRequestId[i] = requestId;
                 break;
