@@ -12,7 +12,7 @@ task("borrowRequest", "Borrow tokens from Aave")
   .addOptionalParam("contractaddress", "Aave Confidentiality Adapter address", undefined, types.string)
   .addOptionalParam("asset", "The borrowed token address", undefined, types.string)
   .addOptionalParam("amount", "The borrowed amount", "1000000", types.string)
-  .addOptionalParam("interestRateMode", "The interest rate mode (0 for stable, 1 for variable)", "2", types.string)
+  .addOptionalParam("interestRateMode", "The interest rate mode (1 for stable, 2 for variable)", "2", types.string)
   .setAction(async ({ signeraddress, contractaddress, asset, amount, interestRateMode }, hre) => {
     const { getChainId, ethers, deployments, getNamedAccounts } = hre;
 

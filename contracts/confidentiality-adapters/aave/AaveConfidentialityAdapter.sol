@@ -82,6 +82,7 @@ contract AaveConfidentialityAdapter is
     mapping(uint256 supplyRequestId => uint256 unwrapRequestId) public requestIdToUnwrapRequestId;
     mapping(address account => euint64 amount) public scaledBalances;
     mapping(address => mapping(address => euint64)) public userDebts;
+    mapping(address => euint64) public userMaxBorrowable;
 
     modifier onlyCToken() {
         address[] memory aaveSupportedTokens = aavePool.getReservesList();
@@ -106,7 +107,7 @@ contract AaveConfidentialityAdapter is
         }
     }
 
-    function supplyRequest(address asset, euint64 amount, uint16 referralCode) public {
+    function supplyRequest(address asset, euint64 amount, euint64 maxBorrow, uint16 referralCode) public {
         address cToken = tokenAddressToCTokenAddress[asset];
         require(cToken != address(0), "AaveConfidentialityAdapter: invalid asset");
 
@@ -118,6 +119,17 @@ contract AaveConfidentialityAdapter is
         supplyRequests.push(SupplyRequestData(msg.sender, asset, amount, referralCode));
         TFHE.allow(supplyRequests[supplyRequests.length - 1].amount, msg.sender);
         TFHE.allowThis(supplyRequests[supplyRequests.length - 1].amount);
+
+        // initialize max borrow if not
+        if (!TFHE.isInitialized(userMaxBorrowable[msg.sender])) {
+            userMaxBorrowable[msg.sender] = TFHE.asEuint64(0);
+            TFHE.allowThis(userMaxBorrowable[msg.sender]);
+        }
+
+        // set user's max borrowable
+        userMaxBorrowable[msg.sender] = TFHE.add(userMaxBorrowable[msg.sender], maxBorrow);
+        TFHE.allow(userMaxBorrowable[msg.sender], msg.sender);
+        TFHE.allowThis(userMaxBorrowable[msg.sender]);
 
         // initialize scaledBalance
         if (!TFHE.isInitialized(scaledBalances[msg.sender])) {
@@ -160,8 +172,17 @@ contract AaveConfidentialityAdapter is
         }
     }
 
-    function supplyRequest(address asset, einput amount, uint16 referralCode, bytes calldata inputProof) public {
-        supplyRequest(asset, TFHE.asEuint64(amount, inputProof), referralCode);
+    function supplyRequest(
+        address asset,
+        einput _amount,
+        einput _maxBorrow,
+        uint16 referralCode,
+        bytes[] calldata inputProofs
+    ) public {
+        euint64 amount = TFHE.asEuint64(_amount, inputProofs[0]);
+        euint64 maxBorrowAmount = TFHE.asEuint64(_maxBorrow, inputProofs[1]);
+
+        supplyRequest(asset, amount, maxBorrowAmount, referralCode);
     }
 
     function withdrawRequest(address asset, euint64 amount, address to) public {
@@ -200,15 +221,15 @@ contract AaveConfidentialityAdapter is
         DataTypes.InterestRateMode interestRateMode,
         uint16 referralCode
     ) public {
-        // check user's balance
-        euint64 userBalance = scaledBalances[msg.sender];
-        euint64 checkedAmount = TFHE.select(TFHE.le(amount, userBalance), amount, TFHE.asEuint64(0));
+        // check if the user has enough supplied balance
+        euint64 max = userMaxBorrowable[msg.sender];
+        euint64 safeAmount = TFHE.select(TFHE.le(amount, max), amount, TFHE.asEuint64(0));
 
-        borrowRequests.push(BorrowRequestData(msg.sender, asset, checkedAmount, interestRateMode, referralCode));
+        borrowRequests.push(BorrowRequestData(msg.sender, asset, safeAmount, interestRateMode, referralCode));
         TFHE.allow(borrowRequests[borrowRequests.length - 1].amount, msg.sender);
         TFHE.allowThis(borrowRequests[borrowRequests.length - 1].amount);
 
-        emit BorrowRequested(asset, msg.sender, msg.sender, checkedAmount, interestRateMode, 0, referralCode);
+        emit BorrowRequested(asset, msg.sender, msg.sender, safeAmount, interestRateMode, 0, referralCode);
 
         if (borrowRequests.length < REQUEST_THRESHOLD) {
             return;
@@ -231,7 +252,7 @@ contract AaveConfidentialityAdapter is
             }
         }
 
-        if (requests.length == REQUEST_THRESHOLD) {
+        if (requests.length >= REQUEST_THRESHOLD) {
             _processBorrowRequests(requests, matchedIndexes);
         }
     }
@@ -276,11 +297,6 @@ contract AaveConfidentialityAdapter is
             if (rrd.asset == asset && rrd.interestRateMode == interestRateMode) {
                 requests[i] = rrd;
                 matchedIndexes[count] = i;
-
-                // update user's debt
-                userDebts[msg.sender][asset] = TFHE.sub(userDebts[msg.sender][asset], rrd.amount);
-                TFHE.allow(userDebts[msg.sender][asset], msg.sender);
-                TFHE.allowThis(userDebts[msg.sender][asset]);
 
                 unchecked {
                     count++;
@@ -343,6 +359,10 @@ contract AaveConfidentialityAdapter is
     }
 
     function callbackBorrowRequest(uint256 requestId, uint256 amount) public virtual nonReentrant onlyGateway {
+        if (amount == 0) {
+            revert("AaveConfidentialityAdapter: Borrow amount cannot be zero");
+        }
+
         BorrowRequestData[] memory requests = requestIdToBorrowRequests[requestId];
 
         address asset = requests[0].asset;
@@ -375,11 +395,15 @@ contract AaveConfidentialityAdapter is
 
             //update user's debt
             userDebts[to][asset] = TFHE.add(userDebts[to][asset], amt);
-
             TFHE.allow(userDebts[to][asset], to);
             TFHE.allowThis(userDebts[to][asset]);
-            TFHE.allow(amt, cToken);
 
+            // Update user's max borrowable
+            userMaxBorrowable[to] = TFHE.sub(userMaxBorrowable[to], amt);
+            TFHE.allow(userMaxBorrowable[to], to);
+            TFHE.allowThis(userMaxBorrowable[to]);
+
+            TFHE.allow(amt, cToken);
             ConfidentialERC20Wrapped(cToken).transfer(to, amt);
         }
 
