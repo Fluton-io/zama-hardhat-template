@@ -24,7 +24,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
 
   console.log(`AaveConfidentialityAdapter contract: `, deployed.address);
-  /* 
+
   const verificationArgs = {
     address: deployed.address,
     contract: "contracts/confidentiality-adapters/aave/AaveConfidentialityAdapter.sol:AaveConfidentialityAdapter",
@@ -33,7 +33,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   console.info("\nSubmitting verification request on Etherscan...");
   await sleep(40000); // wait for etherscan to index the contract
-  await hre.run("verify:verify", verificationArgs); */
+  await hre.run("verify:verify", verificationArgs);
 };
 
 export default func;

@@ -56,9 +56,8 @@ task("borrowRequest", "Borrow tokens from Aave")
 task("finalizeBorrow", "Finalize borrow transaction")
   .addOptionalParam("signeraddress", "signer address", undefined, types.string)
   .addOptionalParam("contractaddress", "Aave Confidentiality Adapter address", undefined, types.string)
-  .addOptionalParam("amount", "The borrowed amount", "1000000", types.string)
   .addOptionalParam("requestid", "The borrow request ID", undefined, types.string)
-  .setAction(async ({ signeraddress, contractaddress, amount, requestid }, hre) => {
+  .setAction(async ({ signeraddress, contractaddress, requestid }, hre) => {
     const { getChainId, ethers, deployments, getNamedAccounts } = hre;
 
     const chainId = await getChainId();
@@ -76,6 +75,6 @@ task("finalizeBorrow", "Finalize borrow transaction")
       signer,
     )) as AaveConfidentialityAdapter;
 
-    const txHash = await contract.finalizeBorrow(Typed.uint256(requestid), Typed.uint256(amount));
+    const txHash = await contract.finalizeBorrow(Typed.uint256(requestid));
     console.info("Finalize borrow tx receipt: ", txHash);
   });

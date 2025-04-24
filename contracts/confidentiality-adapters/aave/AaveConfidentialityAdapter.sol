@@ -223,20 +223,15 @@ contract AaveConfidentialityAdapter is
             if (brd.asset == asset && brd.interestRateMode == interestRateMode) {
                 requests[count] = brd;
                 matchedIndexes[count] = i;
-
-                // update user's debt
-                userDebts[msg.sender][asset] = TFHE.add(userDebts[msg.sender][asset], brd.amount);
-                TFHE.allow(userDebts[msg.sender][asset], msg.sender);
-                TFHE.allowThis(userDebts[msg.sender][asset]);
-
                 unchecked {
                     count++;
                 }
+
                 if (count == REQUEST_THRESHOLD) break;
             }
         }
 
-        if (requests.length >= REQUEST_THRESHOLD) {
+        if (requests.length == REQUEST_THRESHOLD) {
             _processBorrowRequests(requests, matchedIndexes);
         }
     }
@@ -351,17 +346,22 @@ contract AaveConfidentialityAdapter is
         BorrowRequestData[] memory requests = requestIdToBorrowRequests[requestId];
 
         address asset = requests[0].asset;
+        address cToken = tokenAddressToCTokenAddress[asset];
         DataTypes.InterestRateMode interestRateMode = requests[0].interestRateMode;
         uint16 referralCode = requests[0].referralCode;
 
         aavePool.borrow(asset, amount, uint256(interestRateMode), referralCode, address(this));
 
-        requestIdToRequestData[requestId] = RequestData(RequestType.BORROW, abi.encode(requests));
+        // wrap borrowed tokens
+        IERC20(asset).approve(cToken, amount);
+        ConfidentialERC20Wrapped(cToken).wrap(amount);
 
-        emit BorrowCallback(asset, uint64(amount));
+        emit BorrowCallback(asset, uint64(amount), requestId);
+
+        requestIdToRequestData[requestId] = RequestData(RequestType.BORROW, abi.encode(requests));
     }
 
-    function finalizeBorrow(uint256 requestId, uint256 amount) public nonReentrant {
+    function finalizeBorrow(uint256 requestId) public nonReentrant {
         RequestData memory requestData = requestIdToRequestData[requestId];
         require(requestData.requestType == RequestType.BORROW, "Not a borrow request");
 
@@ -369,20 +369,18 @@ contract AaveConfidentialityAdapter is
         address asset = requests[0].asset;
         address cToken = tokenAddressToCTokenAddress[asset];
 
-        // Wrap and transfer tokens
-        IERC20(asset).approve(cToken, amount);
-        ConfidentialERC20Wrapped(cToken).wrap(amount);
-
         for (uint256 i = 0; i < requests.length; i++) {
             address to = requests[i].sender;
-            // increase user's debt
-            userDebts[to][asset] = TFHE.add(userDebts[to][asset], requests[i].amount);
+            euint64 amt = requests[i].amount;
+
+            //update user's debt
+            userDebts[to][asset] = TFHE.add(userDebts[to][asset], amt);
 
             TFHE.allow(userDebts[to][asset], to);
             TFHE.allowThis(userDebts[to][asset]);
-            TFHE.allow(requests[i].amount, cToken);
+            TFHE.allow(amt, cToken);
 
-            ConfidentialERC20Wrapped(cToken).transfer(to, requests[i].amount);
+            ConfidentialERC20Wrapped(cToken).transfer(to, amt);
         }
 
         delete requestIdToBorrowRequests[requestId];
@@ -400,7 +398,7 @@ contract AaveConfidentialityAdapter is
         // Approve and repay to Aave pool
         IERC20(asset).approve(address(aavePool), amount);
 
-        emit RepayCallback(asset, uint64(amount));
+        emit RepayCallback(asset, uint64(amount), requestId);
     }
 
     function onUnwrap(uint256 requestId, uint256 amount) external nonReentrant onlyCToken {
