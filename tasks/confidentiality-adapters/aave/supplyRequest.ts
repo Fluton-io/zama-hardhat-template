@@ -39,20 +39,9 @@ task("supplyRequest", "Supply tokens into Aave")
 
     const input = instance.createEncryptedInput(contractaddress, signer.address);
 
-    // Constants
     const rawAmount = parseInt(amount); // e.g. 10 USDC = 10_000_000
-    const ltvBps = 8000;
-    const price = 100_000_000; // USDC price from oracle (in 8 decimals)
-    const priceDecimals = 1e8;
-    const ltvBase = 10000;
-
-    //Calculate max borrowable amount
-    const maxBorrow = Math.floor((rawAmount * price * ltvBps) / (priceDecimals * ltvBase));
-    console.log("Supplying:", rawAmount / 1e6, "USDC");
-    console.log("Calculated max borrowable:", maxBorrow / 1e6, "USDC");
 
     const encryptedAmount = await input.add64(rawAmount).encrypt();
-    const encryptedMaxBorrow = await input.add64(maxBorrow).encrypt();
 
     const contract = (await ethers.getContractAt(
       "AaveConfidentialityAdapter",
@@ -63,9 +52,8 @@ task("supplyRequest", "Supply tokens into Aave")
     const tx = await contract.supplyRequest(
       Typed.address(asset),
       Typed.bytes32(encryptedAmount.handles[0]),
-      Typed.bytes32(encryptedMaxBorrow.handles[0]),
       Typed.uint16(0), // referralCode
-      [Typed.bytes(encryptedAmount.inputProof), Typed.bytes(encryptedMaxBorrow.inputProof)],
+      Typed.bytes(encryptedAmount.inputProof),
     );
 
     console.info("Supply tx receipt: ", tx);

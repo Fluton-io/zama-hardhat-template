@@ -107,7 +107,7 @@ contract AaveConfidentialityAdapter is
         }
     }
 
-    function supplyRequest(address asset, euint64 amount, euint64 maxBorrow, uint16 referralCode) public {
+    function supplyRequest(address asset, euint64 amount, uint16 referralCode) public {
         address cToken = tokenAddressToCTokenAddress[asset];
         require(cToken != address(0), "AaveConfidentialityAdapter: invalid asset");
 
@@ -125,11 +125,6 @@ contract AaveConfidentialityAdapter is
             userMaxBorrowable[msg.sender] = TFHE.asEuint64(0);
             TFHE.allowThis(userMaxBorrowable[msg.sender]);
         }
-
-        // set user's max borrowable
-        userMaxBorrowable[msg.sender] = TFHE.add(userMaxBorrowable[msg.sender], maxBorrow);
-        TFHE.allow(userMaxBorrowable[msg.sender], msg.sender);
-        TFHE.allowThis(userMaxBorrowable[msg.sender]);
 
         // initialize scaledBalance
         if (!TFHE.isInitialized(scaledBalances[msg.sender])) {
@@ -172,17 +167,8 @@ contract AaveConfidentialityAdapter is
         }
     }
 
-    function supplyRequest(
-        address asset,
-        einput _amount,
-        einput _maxBorrow,
-        uint16 referralCode,
-        bytes[] calldata inputProofs
-    ) public {
-        euint64 amount = TFHE.asEuint64(_amount, inputProofs[0]);
-        euint64 maxBorrowAmount = TFHE.asEuint64(_maxBorrow, inputProofs[1]);
-
-        supplyRequest(asset, amount, maxBorrowAmount, referralCode);
+    function supplyRequest(address asset, einput _amount, uint16 referralCode, bytes calldata inputProof) public {
+        supplyRequest(asset, TFHE.asEuint64(_amount, inputProof), referralCode);
     }
 
     function withdrawRequest(address asset, euint64 amount, address to) public {
@@ -305,7 +291,7 @@ contract AaveConfidentialityAdapter is
             }
         }
 
-        if (repayRequests.length >= REQUEST_THRESHOLD) {
+        if (requests.length >= REQUEST_THRESHOLD) {
             _processRepayRequests(requests, matchedIndexes);
         }
     }
@@ -381,36 +367,6 @@ contract AaveConfidentialityAdapter is
         requestIdToRequestData[requestId] = RequestData(RequestType.BORROW, abi.encode(requests));
     }
 
-    function finalizeBorrow(uint256 requestId) public nonReentrant {
-        RequestData memory requestData = requestIdToRequestData[requestId];
-        require(requestData.requestType == RequestType.BORROW, "Not a borrow request");
-
-        BorrowRequestData[] memory requests = abi.decode(requestData.data, (BorrowRequestData[]));
-        address asset = requests[0].asset;
-        address cToken = tokenAddressToCTokenAddress[asset];
-
-        for (uint256 i = 0; i < requests.length; i++) {
-            address to = requests[i].sender;
-            euint64 amt = requests[i].amount;
-
-            //update user's debt
-            userDebts[to][asset] = TFHE.add(userDebts[to][asset], amt);
-            TFHE.allow(userDebts[to][asset], to);
-            TFHE.allowThis(userDebts[to][asset]);
-
-            // Update user's max borrowable
-            userMaxBorrowable[to] = TFHE.sub(userMaxBorrowable[to], amt);
-            TFHE.allow(userMaxBorrowable[to], to);
-            TFHE.allowThis(userMaxBorrowable[to]);
-
-            TFHE.allow(amt, cToken);
-            ConfidentialERC20Wrapped(cToken).transfer(to, amt);
-        }
-
-        delete requestIdToBorrowRequests[requestId];
-        delete requestIdToRequestData[requestId];
-    }
-
     function callbackRepayRequest(uint256 requestId, uint256 amount) public virtual nonReentrant onlyGateway {
         RepayRequestData[] memory requests = requestIdToRepayRequests[requestId];
         address asset = requests[0].asset;
@@ -428,8 +384,8 @@ contract AaveConfidentialityAdapter is
     function onUnwrap(uint256 requestId, uint256 amount) external nonReentrant onlyCToken {
         requestIdToAmount[requestId] = amount;
         for (uint256 i = requestId - 1; i > 0; i--) {
-            // @todo: make sure this doesn't overlap with other requestId
-            if (requestIdToSupplyRequests[i].length > 0) {
+            RequestType rt = requestIdToRequestData[i].requestType;
+            if (rt == RequestType.SUPPLY || rt == RequestType.REPAY) {
                 requestIdToUnwrapRequestId[i] = requestId;
                 break;
             }
@@ -459,14 +415,82 @@ contract AaveConfidentialityAdapter is
             scaledBalances[requests[i].sender] = newBalance;
             TFHE.allowThis(newBalance);
             TFHE.allow(newBalance, requests[i].sender);
+
+            // calculate max borrowable = amount * LTV / LTV_BASE
+            euint64 addedBorrowable = TFHE.div(TFHE.mul(requests[i].amount, uint64(8000)), uint64(10000));
+
+            // update user's max borrowable amount
+            userMaxBorrowable[requests[i].sender] = TFHE.add(userMaxBorrowable[requests[i].sender], addedBorrowable);
+
+            // allow usage by contract and user
+            TFHE.allow(userMaxBorrowable[requests[i].sender], requests[i].sender);
+            TFHE.allowThis(userMaxBorrowable[requests[i].sender]);
         }
         delete requestIdToSupplyRequests[supplyRequestId];
         delete requestIdToRequestData[supplyRequestId];
         delete requestIdToAmount[unwrapRequestId];
     }
 
-    function test() public {
-        TFHE.allow(scaledBalances[msg.sender], msg.sender);
+    function finalizeBorrowRequest(uint256 requestId) external {
+        RequestData memory requestData = requestIdToRequestData[requestId];
+        require(requestData.requestType == RequestType.BORROW, "Not a borrow request");
+
+        BorrowRequestData[] memory requests = abi.decode(requestData.data, (BorrowRequestData[]));
+        address asset = requests[0].asset;
+        address cToken = tokenAddressToCTokenAddress[asset];
+
+        for (uint256 i = 0; i < requests.length; i++) {
+            address to = requests[i].sender;
+
+            //update user's debt
+            userDebts[to][asset] = TFHE.add(userDebts[to][asset], requests[i].amount);
+            TFHE.allow(userDebts[to][asset], to);
+            TFHE.allowThis(userDebts[to][asset]);
+
+            // Update user's max borrowable
+            userMaxBorrowable[to] = TFHE.sub(userMaxBorrowable[to], requests[i].amount);
+            TFHE.allow(userMaxBorrowable[to], to);
+            TFHE.allowThis(userMaxBorrowable[to]);
+
+            TFHE.allow(requests[i].amount, cToken);
+            ConfidentialERC20Wrapped(cToken).transfer(to, requests[i].amount);
+        }
+
+        delete requestIdToBorrowRequests[requestId];
+        delete requestIdToRequestData[requestId];
+    }
+
+    function finalizeRepayRequest(uint256 requestId) external {
+        RequestData memory requestData = requestIdToRequestData[requestId];
+        require(requestData.requestType == RequestType.REPAY, "Not a repay request");
+
+        RepayRequestData[] memory requests = abi.decode(requestData.data, (RepayRequestData[]));
+        uint256 unwrapRequestId = requestIdToUnwrapRequestId[requestId];
+        uint256 amount = requestIdToAmount[unwrapRequestId];
+        require(amount > 0, "AaveConfidentialityAdapter: invalid amount");
+
+        address asset = requests[0].asset;
+
+        IERC20(asset).approve(address(aavePool), amount);
+        aavePool.repay(asset, amount, uint256(requests[0].interestRateMode), address(this));
+
+        for (uint256 i = 0; i < requests.length; i++) {
+            address user = requests[i].sender;
+
+            // Decrease user's encrypted debt
+            userDebts[user][asset] = TFHE.sub(userDebts[user][asset], requests[i].amount);
+            TFHE.allow(userDebts[user][asset], user);
+            TFHE.allowThis(userDebts[user][asset]);
+
+            // Increase user's max borrowable
+            userMaxBorrowable[user] = TFHE.add(userMaxBorrowable[user], requests[i].amount);
+            TFHE.allow(userMaxBorrowable[user], user);
+            TFHE.allowThis(userMaxBorrowable[user]);
+        }
+
+        delete requestIdToRepayRequests[requestId];
+        delete requestIdToRequestData[requestId];
+        delete requestIdToAmount[unwrapRequestId];
     }
 
     function _processSupplyRequests(SupplyRequestData[] memory srd, uint256[] memory indexes) internal {

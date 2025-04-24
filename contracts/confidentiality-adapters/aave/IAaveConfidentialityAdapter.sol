@@ -40,14 +40,8 @@ interface IAaveConfidentialityAdapter is IConfidentialityAdapter {
     event BorrowCallback(address indexed reserve, uint64 amount, uint256 requestId);
     event RepayCallback(address indexed reserve, uint64 amount, uint256 requestId);
 
-    function supplyRequest(address asset, euint64 amount, euint64 maxBorrow, uint16 referralCode) external;
-    function supplyRequest(
-        address asset,
-        einput amount,
-        einput maxBorrow,
-        uint16 referralCode,
-        bytes[] calldata inputProofs
-    ) external;
+    function supplyRequest(address asset, euint64 amount, uint16 referralCode) external;
+    function supplyRequest(address asset, einput amount, uint16 referralCode, bytes calldata inputProof) external;
 
     function withdrawRequest(address asset, euint64 amount, address to) external;
     function withdrawRequest(address asset, einput amount, address to, bytes calldata inputProof) external;
