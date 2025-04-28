@@ -1,6 +1,5 @@
 import { task, types } from "hardhat/config";
 
-import { GATEWAY_URL } from "../../../config/constants";
 import { AaveConfidentialityAdapter } from "../../../types";
 
 task("finalizeSupplyRequests", "Finalize the supply requests and supply tokens into Aave")
