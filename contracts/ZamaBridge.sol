@@ -104,20 +104,15 @@ contract ZamaBridge is SepoliaZamaFHEVMConfig, Ownable2Step {
         emit IntentCreated(intent);
     }
 
-    function fulfill(Intent calldata intent) external {
+    function fulfill(Intent memory intent) public {
         if (intent.relayer != msg.sender) {
             revert UnauthorizedRelayer();
         }
 
-        require(TFHE.isSenderAllowed(intent.inputAmount), "Unauthorized access to encrypted input amount.");
         require(TFHE.isSenderAllowed(intent.outputAmount), "Unauthorized access to encrypted output amount.");
 
-        TFHE.allowThis(intent.inputAmount);
         TFHE.allowThis(intent.outputAmount);
-
         TFHE.allow(intent.outputAmount, intent.outputToken);
-
-        TFHE.allow(intent.inputAmount, intent.relayer);
         TFHE.allow(intent.outputAmount, intent.relayer);
 
         // if the input token is not WETH, transfer the amount from the contract to the receiver
@@ -126,6 +121,26 @@ contract ZamaBridge is SepoliaZamaFHEVMConfig, Ownable2Step {
         doesIntentExist[intent.id] = true;
 
         emit IntentFulfilled(intent);
+    }
+
+    function fulfill(Intent calldata intent, einput _outputAmount, bytes calldata _inputProof) external {
+        euint64 outputAmount = TFHE.asEuint64(_outputAmount, _inputProof);
+
+        Intent memory modifiedIntent = Intent({
+            sender: intent.sender,
+            receiver: intent.receiver,
+            relayer: intent.relayer,
+            inputToken: intent.inputToken,
+            outputToken: intent.outputToken,
+            inputAmount: intent.inputAmount,
+            outputAmount: outputAmount,
+            id: intent.id,
+            originChainId: intent.originChainId,
+            destinationChainId: intent.destinationChainId,
+            filledStatus: intent.filledStatus
+        });
+
+        fulfill(modifiedIntent);
     }
 
     function withdraw(address tokenAddress, einput _encryptedAmount, bytes calldata _inputProof) public onlyOwner {
