@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { LibSupplyRequest } from "../libraries/LibSupplyRequest.sol";
 import "fhevm/lib/TFHE.sol";
 
-contract SupplyRequestFacet {
+contract SupplyFacet {
     function supplyRequest(address asset, einput _amount, uint16 referralCode, bytes calldata inputProof) external {
         euint64 amount = TFHE.asEuint64(_amount, inputProof);
         LibSupplyRequest.supplyRequest(asset, amount, referralCode);

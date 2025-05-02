@@ -41,6 +41,8 @@ library LibSupplyRequest {
             TFHE.allowThis(s.userMaxBorrowable[msg.sender]);
         }
 
+        emit LibAdapterStorage.SupplyRequested(asset, msg.sender, msg.sender, amount, referralCode);
+
         if (s.supplyRequests.length < s.REQUEST_THRESHOLD) {
             return;
         }

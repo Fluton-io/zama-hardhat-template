@@ -59,24 +59,55 @@ library LibAdapterStorage {
         mapping(address => address) tokenAddressToCTokenAddress;
         mapping(address => address) cTokenAddressToTokenAddress;
         mapping(uint256 => SupplyRequestData[]) requestIdToSupplyRequests;
+        mapping(uint256 => WithdrawRequestData[]) requestIdToWithdrawRequests;
+        mapping(uint256 => BorrowRequestData[]) requestIdToBorrowRequests;
+        mapping(uint256 => RepayRequestData[]) requestIdToRepayRequests;
         mapping(uint256 => RequestData) requestIdToRequestData;
         mapping(uint256 => uint256) requestIdToAmount;
         mapping(uint256 => uint256) requestIdToUnwrapRequestId;
         mapping(address => euint64) scaledBalances;
         mapping(address => euint64) userMaxBorrowable;
+        mapping(address => mapping(address => euint64)) userDebts;
     }
+
+    error AmountIsZero();
+    error InvalidRequestType();
+    error NotEnoughBorrowRequest();
 
     event OnUnwrap(uint256 indexed requestId, uint256 amount);
 
     event SupplyRequested(
-        address indexed asset,
-        address indexed sender,
-        address indexed to,
+        address indexed reserve,
+        address user,
+        address indexed onBehalfOf,
         euint64 amount,
-        uint16 referralCode
+        uint16 indexed referralCode
     );
 
-    event SupplyCallback(address indexed asset, uint64 amount, uint256 requestId);
+    event WithdrawRequested(address indexed reserve, address indexed user, address indexed to, euint64 amount);
+
+    event BorrowRequested(
+        address indexed reserve,
+        address user,
+        address indexed onBehalfOf,
+        euint64 amount,
+        DataTypes.InterestRateMode interestRateMode,
+        uint256 borrowRate,
+        uint16 indexed referralCode
+    );
+
+    event RepayRequested(
+        address indexed reserve,
+        address indexed user,
+        address indexed repayer,
+        euint64 amount,
+        bool useATokens
+    );
+
+    event SupplyCallback(address indexed reserve, uint64 amount, uint256 requestId);
+    event WithdrawCallback(address indexed reserve, uint64 amount, uint256 requestId);
+    event BorrowCallback(address indexed reserve, uint64 amount, uint256 requestId);
+    event RepayCallback(address indexed reserve, uint64 amount, uint256 requestId);
 
     function getStorage() internal pure returns (Storage storage s) {
         bytes32 position = STORAGE_POSITION;
