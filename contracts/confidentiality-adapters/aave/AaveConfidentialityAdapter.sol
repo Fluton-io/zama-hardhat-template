@@ -278,10 +278,10 @@ contract AaveConfidentialityAdapter is
         uint256[] memory matchedIndexes = new uint256[](REQUEST_THRESHOLD);
         uint8 count = 0;
 
-        for (uint256 i = 0; i < REQUEST_THRESHOLD; i++) {
+        for (uint256 i = 0; i < repayRequests.length; i++) {
             RepayRequestData memory rrd = repayRequests[i];
             if (rrd.asset == asset && rrd.interestRateMode == interestRateMode) {
-                requests[i] = rrd;
+                requests[count] = rrd;
                 matchedIndexes[count] = i;
 
                 unchecked {

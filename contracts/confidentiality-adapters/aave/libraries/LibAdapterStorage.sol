@@ -73,6 +73,9 @@ library LibAdapterStorage {
     error AmountIsZero();
     error InvalidRequestType();
     error NotEnoughBorrowRequest();
+    error NotEnoughRepayRequest();
+    error InvalidCTokenAddress(address asset);
+    error NoUnwrapRequestIdFound();
 
     event OnUnwrap(uint256 indexed requestId, uint256 amount);
 
