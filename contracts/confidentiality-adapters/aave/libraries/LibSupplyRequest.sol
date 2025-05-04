@@ -180,5 +180,6 @@ library LibSupplyRequest {
         delete s.requestIdToSupplyRequests[supplyRequestId];
         delete s.requestIdToRequestData[supplyRequestId];
         delete s.requestIdToAmount[unwrapRequestId];
+        delete s.requestIdToUnwrapRequestId[supplyRequestId];
     }
 }

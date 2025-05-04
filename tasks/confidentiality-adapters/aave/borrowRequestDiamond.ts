@@ -6,29 +6,26 @@ import { task, types } from "hardhat/config";
 import addresses from "../../../config/addresses";
 import { GATEWAY_URL } from "../../../config/constants";
 
-task("supplyRequest", "Supply tokens into Diamond SupplyRequestFacet")
+task("borrowRequest", "Borrow tokens from Aave via Diamond")
   .addOptionalParam("signeraddress", "Signer address", undefined, types.string)
   .addOptionalParam("diamondaddress", "Diamond contract address", undefined, types.string)
-  .addOptionalParam("asset", "The supplied token address", undefined, types.string)
-  .addOptionalParam("amount", "The supplied amount", "1000000", types.string)
-  .setAction(async ({ signeraddress, diamondaddress, asset, amount }, hre) => {
+  .addOptionalParam("amount", "The borrowed amount", "1000000", types.string)
+  .addOptionalParam("interestRateMode", "The interest rate mode (1 for stable, 2 for variable)", "2", types.string)
+  .setAction(async ({ signeraddress, diamondaddress, asset, amount, interestRateMode }, hre) => {
     const { getChainId, ethers, deployments, getNamedAccounts } = hre;
+
     const chainId = await getChainId();
     const { user } = await getNamedAccounts();
     const signer = await ethers.getSigner(signeraddress || user);
-
     if (!addresses[+chainId]) {
       throw new Error("Chain ID not supported");
     }
-
     if (!asset) {
       asset = addresses[+chainId].AAVE_USDC;
     }
-
     if (!diamondaddress) {
       diamondaddress = (await deployments.get("Diamond")).address;
     }
-
     const instance = await createFhevmInstance({
       kmsContractAddress: addresses[+chainId].KMSVERIFIER,
       aclContractAddress: addresses[+chainId].ACL,
@@ -42,28 +39,23 @@ task("supplyRequest", "Supply tokens into Diamond SupplyRequestFacet")
 
     const encryptedAmount = await input.add64(rawAmount).encrypt();
 
-    // Connect to Diamond as supplyFacet
-    const supplyFacet = await ethers.getContractAt("SupplyFacet", diamondaddress, signer);
+    // Connect to Diamond as borrowFacet
+    const borrowFacet = await ethers.getContractAt("BorrowFacet", diamondaddress, signer);
 
-    const tx = await supplyFacet.supplyRequest(
+    const txHash = await borrowFacet.borrowRequest(
       Typed.address(asset),
       Typed.bytes32(encryptedAmount.handles[0]),
+      Typed.uint8(interestRateMode),
       Typed.uint16(0), // referralCode
       Typed.bytes(encryptedAmount.inputProof),
-      {
-        gasLimit: 9000000,
-      },
     );
-
-    console.info("Supply tx receipt:", tx.hash);
-    await tx.wait();
-    console.info("Supply transaction confirmed.");
+    console.info("Borrow tx receipt: ", txHash);
   });
 
-task("finalizeSupplyRequests", "Finalize the supply requests via Diamond")
+task("finalizeBorrowRequest", "Finalize the borrow requests via Diamond")
   .addOptionalParam("signeraddress", "Signer address", undefined, types.string)
   .addOptionalParam("diamondaddress", "Diamond contract address", undefined, types.string)
-  .addParam("requestid", "The request ID of the supply request")
+  .addParam("requestid", "The request ID of the borrow request")
   .setAction(async ({ signeraddress, diamondaddress, requestid }, hre) => {
     const { ethers, deployments, getNamedAccounts } = hre;
     const { user } = await getNamedAccounts();
@@ -73,13 +65,13 @@ task("finalizeSupplyRequests", "Finalize the supply requests via Diamond")
       diamondaddress = (await deployments.get("Diamond")).address;
     }
 
-    const supplyFacet = await ethers.getContractAt("SupplyFacet", diamondaddress, signer);
+    const borrowFacet = await ethers.getContractAt("BorrowFacet", diamondaddress, signer);
 
-    const tx = await supplyFacet.finalizeSupplyRequests(requestid, {
+    const tx = await borrowFacet.finalizeBorrowRequests(requestid, {
       gasLimit: 9000000,
     });
 
-    console.info("finalizeSupplyRequests tx hash:", tx.hash);
+    console.info("finalizeBorrowRequests tx hash:", tx.hash);
     await tx.wait();
-    console.info("finalizeSupplyRequests transaction confirmed ✅", tx.hash);
+    console.info("finalizeBorrowRequests transaction confirmed ✅", tx.hash);
   });

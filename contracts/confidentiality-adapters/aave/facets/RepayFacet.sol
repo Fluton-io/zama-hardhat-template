@@ -20,7 +20,7 @@ contract RepayFacet {
         LibRepayRequest.callbackRepayRequest(requestId, amount);
     }
 
-    function finalizeRepayRequests(uint256 repayRequestId) external {
+    function finalizeRepayRequest(uint256 repayRequestId) external {
         LibRepayRequest.finalizeRepayRequests(repayRequestId);
     }
 }

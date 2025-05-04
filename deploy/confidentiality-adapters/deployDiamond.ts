@@ -20,28 +20,63 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
   console.log("Diamond deployed at:", diamondDeployment.address);
 
-  const supplyRequestFacetDeployment = await deploy("SupplyRequestFacet", {
+  const supplyFacetDeployment = await deploy("SupplyFacet", {
     from: deployer,
     log: true,
   });
-  console.log("SupplyRequestFacet deployed at:", supplyRequestFacetDeployment.address);
+  console.log("SupplyFacet deployed at:", supplyFacetDeployment.address);
 
-  const cut = {
-    facetAddress: supplyRequestFacetDeployment.address,
+  const borrowFacetDeployment = await deploy("BorrowFacet", {
+    from: deployer,
+    log: true,
+  });
+  console.log("BorrowFacet deployed at:", borrowFacetDeployment.address);
+
+  const repayFacetDeployment = await deploy("RepayFacet", {
+    from: deployer,
+    log: true,
+  });
+  console.log("RepayFacet deployed at:", repayFacetDeployment.address);
+
+  const supplyCut = {
+    facetAddress: supplyFacetDeployment.address,
     action: 0,
     functionSelectors: getSelectors(
-      (await hre.ethers.getContractAt(
-        "SupplyRequestFacet",
-        supplyRequestFacetDeployment.address,
-      )) as unknown as Contract,
+      (await hre.ethers.getContractAt("SupplyFacet", supplyFacetDeployment.address)) as unknown as Contract,
     ),
   };
 
-  console.log("Performing diamondCut...");
+  const borrowCut = {
+    facetAddress: borrowFacetDeployment.address,
+    action: 0,
+    functionSelectors: getSelectors(
+      (await hre.ethers.getContractAt("BorrowFacet", borrowFacetDeployment.address)) as unknown as Contract,
+    ),
+  };
+
+  const repayCut = {
+    facetAddress: repayFacetDeployment.address,
+    action: 0,
+    functionSelectors: getSelectors(
+      (await hre.ethers.getContractAt("RepayFacet", repayFacetDeployment.address)) as unknown as Contract,
+    ),
+  };
+
+  console.log("Performing SupplyFacet diamondCut...");
   const diamond = await hre.ethers.getContractAt("Diamond", diamondDeployment.address);
-  const tx = await diamond.diamondCut(cut);
+  const tx = await diamond.diamondCut([supplyCut]);
   await tx.wait();
-  console.log("Diamond cut completed.");
+  console.log("SupplyFacet cut completed.");
+
+  console.log("Performing BorrowFacet diamondCut...");
+  const tx3 = await diamond.diamondCut([borrowCut]);
+  await tx3.wait();
+  console.log("BorrowFacet diamond cut completed.");
+
+  console.log("Performing RepayFacet diamondCut...");
+  const tx4 = await diamond.diamondCut([repayCut]);
+  await tx4.wait();
+  console.log("RepayFacet diamond cut completed.");
 
   const adminFacetDeployment = await deploy("AdminFacet", {
     from: deployer,
@@ -61,14 +96,35 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Cut AdminFacet into diamond
   console.log("Performing AdminFacet diamondCut...");
 
-  const tx2 = await diamond.diamondCut(adminCut);
+  const tx2 = await diamond.diamondCut([adminCut]);
   await tx2.wait();
   console.log("AdminFacet diamond cut completed.");
 
   const adminFacet = await hre.ethers.getContractAt("AdminFacet", diamondDeployment.address);
 
+  const loupeFacetDeployment = await deploy("DiamondLoupeFacet", {
+    from: deployer,
+    log: true,
+  });
+  console.log("DiamondLoupeFacet deployed at:", loupeFacetDeployment.address);
+
+  // Now prepare cut for LoupeFacet
+  const loupeCut = {
+    facetAddress: loupeFacetDeployment.address,
+    action: 0,
+    functionSelectors: getSelectors(
+      (await hre.ethers.getContractAt("DiamondLoupeFacet", loupeFacetDeployment.address)) as unknown as Contract,
+    ),
+  };
+
+  // Cut LoupeFacet into diamond
+  console.log("Performing LoupeFacet diamondCut...");
+  const txLoupe = await diamond.diamondCut([loupeCut]);
+  await txLoupe.wait();
+  console.log("LoupeFacet diamond cut completed.");
+
   console.log("Setting cToken mapping...");
-  await adminFacet.setCTokenAddress(addresses[+chainId].AAVE_USDC, "0x4a644e2da7b7b3ff57afc4a50ae4bc9f4628b4a4");
+  await adminFacet.setCTokenAddress(addresses[+chainId].AAVE_USDC, "0xF155Bbd3359639B2Cf00F1181099B17e87A89a91");
   console.log("CToken mapping set successfully.");
 
   console.log("Setting Aave Pool address...");
@@ -107,4 +163,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
 export default func;
 func.id = "deploy_diamond"; // unique deploy ID
-func.tags = ["Diamond", "SupplyRequest"];
+func.tags = ["Diamond"];

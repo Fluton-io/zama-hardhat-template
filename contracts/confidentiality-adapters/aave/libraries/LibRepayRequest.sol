@@ -105,7 +105,7 @@ library LibRepayRequest {
         }
     }
 
-    function callbackRepayRequest(uint256 requestId, uint64 amount) external {
+    function callbackRepayRequest(uint256 requestId, uint64 amount) internal {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         LibAdapterStorage.RepayRequestData[] memory requests = s.requestIdToRepayRequests[requestId];
@@ -129,7 +129,7 @@ library LibRepayRequest {
         emit LibAdapterStorage.RepayCallback(asset, uint64(amount), requestId);
     }
 
-    function finalizeRepayRequests(uint256 repayRequestId) external {
+    function finalizeRepayRequests(uint256 repayRequestId) internal {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         LibAdapterStorage.RequestData memory requestData = s.requestIdToRequestData[repayRequestId];
@@ -142,9 +142,6 @@ library LibRepayRequest {
             requestData.data,
             (LibAdapterStorage.RepayRequestData[])
         );
-        if (requests.length >= s.REQUEST_THRESHOLD) {
-            revert LibAdapterStorage.NotEnoughRepayRequest();
-        }
 
         uint256 unwrapRequestId = s.requestIdToUnwrapRequestId[repayRequestId];
         if (unwrapRequestId == 0) {

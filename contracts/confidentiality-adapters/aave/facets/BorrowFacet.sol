@@ -9,8 +9,8 @@ contract BorrowFacet {
     function borrowRequest(
         address asset,
         einput _amount,
-        uint16 referralCode,
         DataTypes.InterestRateMode interestRateMode,
+        uint16 referralCode,
         bytes calldata inputProof
     ) external {
         euint64 amount = TFHE.asEuint64(_amount, inputProof);

@@ -26,11 +26,8 @@ contract Diamond is SepoliaZamaFHEVMConfig, SepoliaZamaGatewayConfig, GatewayCal
         LibDiamond.setContractOwner(_contractOwner);
     }
 
-    /// Cut new facets into this diamond
-    function diamondCut(LibDiamond.FacetCut calldata _diamondCut) external {
-        // only the diamond owner can cut new facets
+    function diamondCut(LibDiamond.FacetCut[] calldata _diamondCut) external {
         LibDiamond.enforceIsContractOwner();
-        // cut the facet into the diamond
         LibDiamond.diamondCut(_diamondCut);
     }
 

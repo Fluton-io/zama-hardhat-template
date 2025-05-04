@@ -115,7 +115,7 @@ library LibBorrowRequest {
         }
     }
 
-    function callbackBorrowRequest(uint256 requestId, uint64 amount) external {
+    function callbackBorrowRequest(uint256 requestId, uint64 amount) internal {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         if (amount == 0) {
@@ -144,7 +144,7 @@ library LibBorrowRequest {
         });
     }
 
-    function finalizeBorrowRequests(uint256 requestId) external {
+    function finalizeBorrowRequests(uint256 requestId) internal {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
         LibAdapterStorage.RequestData memory requestData = s.requestIdToRequestData[requestId];
 
