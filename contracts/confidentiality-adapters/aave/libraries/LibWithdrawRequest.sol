@@ -1,0 +1,170 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.24;
+
+import "fhevm/gateway/GatewayCaller.sol";
+import { LibAdapterStorage } from "../libraries/LibAdapterStorage.sol";
+import { TFHE } from "fhevm/lib/TFHE.sol";
+import { ConfidentialERC20Wrapped } from "../../../zama/ConfidentialERC20Wrapped.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IAToken.sol";
+import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
+
+library LibWithdrawRequest {
+    bytes4 constant WithdrawRequestFacet__callbackWithdrawRequest =
+        bytes4(keccak256("callbackWithdrawRequest(uint256,uint64)"));
+
+    function withdrawRequest(address asset, euint64 amount) internal {
+        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
+
+        //  check if the user has enough supplied balance
+        euint64 maxWithdrawable = s.scaledBalances[msg.sender];
+        euint64 safeAmount = TFHE.select(TFHE.le(amount, maxWithdrawable), amount, TFHE.asEuint64(0));
+
+        s.withdrawRequests.push(
+            LibAdapterStorage.WithdrawRequestData({
+                sender: msg.sender,
+                asset: asset,
+                amount: safeAmount,
+                to: msg.sender
+            })
+        );
+
+        TFHE.allow(s.withdrawRequests[s.withdrawRequests.length - 1].amount, msg.sender);
+        TFHE.allowThis(s.withdrawRequests[s.withdrawRequests.length - 1].amount);
+
+        emit LibAdapterStorage.WithdrawRequested(asset, msg.sender, msg.sender, safeAmount);
+
+        if (s.withdrawRequests.length < s.REQUEST_THRESHOLD) {
+            return;
+        }
+
+        LibAdapterStorage.WithdrawRequestData[] memory requests = new LibAdapterStorage.WithdrawRequestData[](
+            s.REQUEST_THRESHOLD
+        );
+        uint256[] memory matchedIndexes = new uint256[](s.REQUEST_THRESHOLD);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < s.withdrawRequests.length; i++) {
+            LibAdapterStorage.WithdrawRequestData memory wrd = s.withdrawRequests[i];
+            if (wrd.asset == asset) {
+                requests[count] = wrd;
+                matchedIndexes[count] = i;
+
+                unchecked {
+                    count++;
+                }
+
+                if (count == s.REQUEST_THRESHOLD) {
+                    break;
+                }
+            }
+        }
+
+        if (requests.length >= s.REQUEST_THRESHOLD) {
+            _processWithdrawRequests(s, requests, matchedIndexes);
+        }
+    }
+
+    function _processWithdrawRequests(
+        LibAdapterStorage.Storage storage s,
+        LibAdapterStorage.WithdrawRequestData[] memory wrd,
+        uint256[] memory matchedIndexes
+    ) internal {
+        uint256[] memory cts = new uint256[](1);
+        euint64 totalAmount = TFHE.asEuint64(0);
+
+        for (uint256 i = 0; i < wrd.length; i++) {
+            totalAmount = TFHE.add(totalAmount, wrd[i].amount);
+        }
+
+        cts[0] = Gateway.toUint256(totalAmount);
+        uint256 requestId = Gateway.requestDecryption(
+            cts,
+            WithdrawRequestFacet__callbackWithdrawRequest,
+            0,
+            block.timestamp + 100,
+            false
+        );
+
+        for (uint256 i = 0; i < wrd.length; i++) {
+            s.requestIdToWithdrawRequests[requestId].push(wrd[i]);
+        }
+
+        s.requestIdToRequestData[requestId] = LibAdapterStorage.RequestData({
+            requestType: LibAdapterStorage.RequestType.WITHDRAW,
+            data: abi.encode(wrd)
+        });
+
+        for (uint256 i = matchedIndexes.length; i > 0; i--) {
+            uint256 index = matchedIndexes[i - 1];
+            s.withdrawRequests[index] = s.withdrawRequests[s.withdrawRequests.length - 1];
+            s.withdrawRequests.pop();
+        }
+    }
+
+    function callbackWithdrawRequest(uint256 requestId, uint64 amount) internal {
+        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
+
+        if (amount == 0) revert LibAdapterStorage.AmountIsZero();
+
+        LibAdapterStorage.WithdrawRequestData[] memory requests = s.requestIdToWithdrawRequests[requestId];
+
+        address asset = requests[0].asset;
+        address cToken = s.tokenAddressToCTokenAddress[asset];
+
+        s.aavePool.withdraw(asset, amount, address(this));
+
+        IERC20(asset).approve(cToken, amount);
+        ConfidentialERC20Wrapped(cToken).wrap(amount);
+
+        emit LibAdapterStorage.WithdrawCallback(asset, amount, requestId);
+    }
+
+    function finalizeWithdrawRequest(uint256 requestId) internal {
+        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
+
+        LibAdapterStorage.RequestData memory requestData = s.requestIdToRequestData[requestId];
+
+        if (requestData.requestType != LibAdapterStorage.RequestType.WITHDRAW) {
+            revert LibAdapterStorage.InvalidRequestType();
+        }
+
+        LibAdapterStorage.WithdrawRequestData[] memory requests = abi.decode(
+            requestData.data,
+            (LibAdapterStorage.WithdrawRequestData[])
+        );
+
+        address asset = requests[0].asset;
+        address cToken = s.tokenAddressToCTokenAddress[asset];
+
+        for (uint256 i = 0; i < requests.length; i++) {
+            // Subtract the amount withdrawn
+            s.scaledBalances[requests[i].sender] = TFHE.sub(s.scaledBalances[requests[i].sender], requests[i].amount);
+
+            TFHE.allow(s.scaledBalances[requests[i].sender], requests[i].sender);
+            TFHE.allowThis(s.scaledBalances[requests[i].sender]);
+
+            // Update max borrowable - subtract proportionally to withdrawn amount
+            euint64 reducedBorrowable = TFHE.div(TFHE.mul(requests[i].amount, uint64(8000)), uint64(10000)); // LTV 80%
+
+            s.userMaxBorrowable[requests[i].sender] = TFHE.sub(
+                s.userMaxBorrowable[requests[i].sender],
+                reducedBorrowable
+            );
+
+            // Allow permissions
+            TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
+            TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
+
+            // transfer the asset to the user
+            TFHE.allow(requests[i].amount, cToken);
+            TFHE.allowThis(requests[i].amount);
+            ConfidentialERC20Wrapped(cToken).transfer(requests[i].to, requests[i].amount);
+        }
+
+        emit LibAdapterStorage.FinalizeWithdrawRequest(asset, requestId);
+
+        delete s.requestIdToWithdrawRequests[requestId];
+        delete s.requestIdToRequestData[requestId];
+    }
+}
