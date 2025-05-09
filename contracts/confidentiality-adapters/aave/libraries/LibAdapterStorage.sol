@@ -107,6 +107,11 @@ library LibAdapterStorage {
         bool useATokens
     );
 
+    event FinalizeSupplyRequest(address reserve, uint256 requestId);
+    event FinalizeWithdrawRequest(address reserve, uint256 requestId);
+    event FinalizeBorrowRequest(address reserve, uint256 requestId);
+    event FinalizeRepayRequest(address reserve, uint256 requestId);
+
     event SupplyCallback(address indexed reserve, uint64 amount, uint256 requestId);
     event WithdrawCallback(address indexed reserve, uint64 amount, uint256 requestId);
     event BorrowCallback(address indexed reserve, uint64 amount, uint256 requestId);

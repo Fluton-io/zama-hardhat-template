@@ -137,11 +137,6 @@ library LibBorrowRequest {
         ConfidentialERC20Wrapped(cToken).wrap(amount);
 
         emit LibAdapterStorage.BorrowCallback(asset, uint64(amount), requestId);
-
-        s.requestIdToRequestData[requestId] = LibAdapterStorage.RequestData({
-            requestType: LibAdapterStorage.RequestType.BORROW,
-            data: abi.encode(requests)
-        });
     }
 
     function finalizeBorrowRequests(uint256 requestId) internal {
@@ -156,9 +151,6 @@ library LibBorrowRequest {
             requestData.data,
             (LibAdapterStorage.BorrowRequestData[])
         );
-        if (requests.length == 0) {
-            revert LibAdapterStorage.NotEnoughBorrowRequest();
-        }
 
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
@@ -179,6 +171,8 @@ library LibBorrowRequest {
             TFHE.allow(requests[i].amount, cToken);
             ConfidentialERC20Wrapped(cToken).transfer(to, requests[i].amount);
         }
+
+        emit LibAdapterStorage.FinalizeBorrowRequest(asset, requestId);
 
         delete s.requestIdToRequestData[requestId];
         delete s.requestIdToBorrowRequests[requestId];

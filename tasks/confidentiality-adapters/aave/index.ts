@@ -4,5 +4,6 @@ export * from "./getSuppliedBalance";
 //export * from "./borrowRequest";
 //export * from "./repayRequest";
 export * from "./supplyRequestDiamond";
+export * from "./withdrawRequestDiamond";
 export * from "./borrowRequestDiamond";
 export * from "./repayRequestDiamond";

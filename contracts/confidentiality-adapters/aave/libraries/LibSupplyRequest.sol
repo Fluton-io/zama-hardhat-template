@@ -176,6 +176,8 @@ library LibSupplyRequest {
             TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
         }
 
+        emit LibAdapterStorage.FinalizeSupplyRequest(asset, supplyRequestId);
+
         // clean up
         delete s.requestIdToSupplyRequests[supplyRequestId];
         delete s.requestIdToRequestData[supplyRequestId];

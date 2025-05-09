@@ -170,6 +170,8 @@ library LibRepayRequest {
             TFHE.allowThis(s.userMaxBorrowable[user]);
         }
 
+        emit LibAdapterStorage.FinalizeRepayRequest(asset, repayRequestId);
+
         delete s.requestIdToRepayRequests[repayRequestId];
         delete s.requestIdToRequestData[repayRequestId];
         delete s.requestIdToAmount[unwrapRequestId];

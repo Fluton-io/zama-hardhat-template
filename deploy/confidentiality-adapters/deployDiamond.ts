@@ -26,6 +26,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
   console.log("SupplyFacet deployed at:", supplyFacetDeployment.address);
 
+  const withdrawFacetDeployment = await deploy("WithdrawFacet", {
+    from: deployer,
+    log: true,
+  });
+  console.log("WithdrawFacet deployed at:", withdrawFacetDeployment.address);
+
   const borrowFacetDeployment = await deploy("BorrowFacet", {
     from: deployer,
     log: true,
@@ -46,6 +52,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     ),
   };
 
+  const withdrawCut = {
+    facetAddress: withdrawFacetDeployment.address,
+    action: 0,
+    functionSelectors: getSelectors(
+      (await hre.ethers.getContractAt("WithdrawFacet", withdrawFacetDeployment.address)) as unknown as Contract,
+    ),
+  };
+
   const borrowCut = {
     facetAddress: borrowFacetDeployment.address,
     action: 0,
@@ -62,11 +76,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     ),
   };
 
-  console.log("Performing SupplyFacet diamondCut...");
   const diamond = await hre.ethers.getContractAt("Diamond", diamondDeployment.address);
+
+  console.log("Performing SupplyFacet diamondCut...");
   const tx = await diamond.diamondCut([supplyCut]);
   await tx.wait();
   console.log("SupplyFacet cut completed.");
+
+  console.log("Performing WithdrawFacet diamondCut...");
+  const tx2 = await diamond.diamondCut([withdrawCut]);
+  await tx2.wait();
+  console.log("WithdrawFacet diamond cut completed.");
 
   console.log("Performing BorrowFacet diamondCut...");
   const tx3 = await diamond.diamondCut([borrowCut]);
@@ -96,8 +116,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Cut AdminFacet into diamond
   console.log("Performing AdminFacet diamondCut...");
 
-  const tx2 = await diamond.diamondCut([adminCut]);
-  await tx2.wait();
+  const tx5 = await diamond.diamondCut([adminCut]);
+  await tx5.wait();
   console.log("AdminFacet diamond cut completed.");
 
   const adminFacet = await hre.ethers.getContractAt("AdminFacet", diamondDeployment.address);
