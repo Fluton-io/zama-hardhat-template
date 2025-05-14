@@ -3,7 +3,7 @@ import { task } from "hardhat/config";
 
 import addresses from "../../config/addresses";
 import { GATEWAY_URL } from "../../config/constants";
-import { CUSDC } from "../../types";
+import { CERC20 } from "../../types";
 
 task("balanceOf", "Get user balance")
   .addParam("signeraddress", "signer address")
@@ -33,7 +33,7 @@ task("balanceOf", "Get user balance")
     const eip712 = instance.createEIP712(publicKey, tokenaddress);
     const signature = await signer.signTypedData(eip712.domain, { Reencrypt: eip712.types.Reencrypt }, eip712.message);
 
-    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress, signer)) as unknown as CUSDC;
+    const cerc20 = (await ethers.getContractAt("cERC20", tokenaddress, signer)) as unknown as CERC20;
 
     const encryptedBalance = await cerc20.balanceOf(address);
 
