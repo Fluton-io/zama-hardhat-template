@@ -7,6 +7,7 @@ import { TFHE } from "fhevm/lib/TFHE.sol";
 import { ConfidentialERC20Wrapped } from "../../../zama/ConfidentialERC20Wrapped.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IAToken.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 library LibSupplyRequest {
     bytes4 constant SupplyRequestFacet__callbackSupplyRequest =
@@ -128,7 +129,9 @@ library LibSupplyRequest {
 
         ConfidentialERC20Wrapped(cToken).unwrap(amount);
 
-        IERC20(asset).approve(address(s.aavePool), amount);
+        uint256 unwrappedAmount = amount *
+            (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
+        IERC20(asset).approve(address(s.aavePool), unwrappedAmount);
 
         emit LibAdapterStorage.SupplyCallback(asset, amount, requestId);
     }
@@ -152,7 +155,8 @@ library LibSupplyRequest {
 
         uint256 afterScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
         uint256 difference = afterScaledBalance - beforeScaledBalance;
-        uint256 multiplier = difference / (amount / (10 ** 6)); // 6 decimals for USDC
+        uint8 tokenDecimals = IERC20Metadata(asset).decimals();
+        uint256 multiplier = difference / (amount / (10 ** tokenDecimals));
 
         // update each user's scaled balances and max borrowable
         for (uint256 i = 0; i < requests.length; i++) {

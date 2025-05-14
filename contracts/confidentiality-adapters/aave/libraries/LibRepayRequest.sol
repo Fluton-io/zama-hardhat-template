@@ -7,6 +7,7 @@ import { TFHE } from "fhevm/lib/TFHE.sol";
 import { ConfidentialERC20Wrapped } from "../../../zama/ConfidentialERC20Wrapped.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 library LibRepayRequest {
     bytes4 constant RepayRequestFacet__callbackRepayRequest = bytes4(keccak256("callbackRepayRequest(uint256,uint64)"));
@@ -124,7 +125,10 @@ library LibRepayRequest {
 
         ConfidentialERC20Wrapped(cToken).unwrap(uint64(amount));
 
-        IERC20(asset).approve(address(s.aavePool), amount);
+        uint256 unwrappedAmount = amount *
+            (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
+
+        IERC20(asset).approve(address(s.aavePool), unwrappedAmount);
 
         emit LibAdapterStorage.RepayCallback(asset, uint64(amount), requestId);
     }

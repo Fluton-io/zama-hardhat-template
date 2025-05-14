@@ -9,6 +9,7 @@ import { GATEWAY_URL } from "../../../config/constants";
 task("withdrawRequest", "Withdraw tokens from Aave via Diamond")
   .addOptionalParam("signeraddress", "Signer address", undefined, types.string)
   .addOptionalParam("diamondaddress", "Diamond contract address", undefined, types.string)
+  .addOptionalParam("asset", "The supplied token address", undefined, types.string)
   .addOptionalParam("amount", "The amount to withdraw", "1000000", types.string)
   .setAction(async ({ signeraddress, diamondaddress, asset, amount }, hre) => {
     const { getChainId, ethers, deployments, getNamedAccounts } = hre;

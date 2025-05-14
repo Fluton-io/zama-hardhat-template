@@ -7,6 +7,7 @@ import { TFHE } from "fhevm/lib/TFHE.sol";
 import { ConfidentialERC20Wrapped } from "../../../zama/ConfidentialERC20Wrapped.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 library LibBorrowRequest {
     bytes4 constant BorrowRequestFacet__callbackBorrowRequest =
@@ -130,13 +131,16 @@ library LibBorrowRequest {
         // define interest rate mode
         DataTypes.InterestRateMode interestRateMode = requests[0].interestRateMode;
 
-        s.aavePool.borrow(asset, amount, uint256(interestRateMode), referralCode, address(this));
+        uint256 amountToBorrow = amount *
+            (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
+
+        s.aavePool.borrow(asset, amountToBorrow, uint256(interestRateMode), referralCode, address(this));
 
         // wrap borrowed tokens
-        IERC20(asset).approve(cToken, amount);
-        ConfidentialERC20Wrapped(cToken).wrap(amount);
+        IERC20(asset).approve(cToken, amountToBorrow);
+        ConfidentialERC20Wrapped(cToken).wrap(amountToBorrow);
 
-        emit LibAdapterStorage.BorrowCallback(asset, uint64(amount), requestId);
+        emit LibAdapterStorage.BorrowCallback(asset, uint64(amountToBorrow), requestId);
     }
 
     function finalizeBorrowRequests(uint256 requestId) internal {

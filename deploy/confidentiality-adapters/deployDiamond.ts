@@ -144,7 +144,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log("LoupeFacet diamond cut completed.");
 
   console.log("Setting cToken mapping...");
-  await adminFacet.setCTokenAddress(addresses[+chainId].AAVE_USDC, "0xF155Bbd3359639B2Cf00F1181099B17e87A89a91");
+  await adminFacet.setCTokenAddress(
+    [addresses[+chainId].AAVE_USDC, addresses[+chainId].AAVE_USDT, addresses[+chainId].AAVE_DAI], // aave usdc, aave usdt, aave dai
+    [
+      "0x4A644e2dA7B7b3ff57Afc4a50aE4Bc9f4628B4a4",
+      "0xf48129D7b3EdD4A429EFcA86380e7c0978b615cc",
+      "0xF01B9BC9059a432aA16b7111A13fD0d10E183E8E",
+    ], // cusdc, cusdt, cdai
+  );
   console.log("CToken mapping set successfully.");
 
   console.log("Setting Aave Pool address...");

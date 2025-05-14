@@ -4,9 +4,9 @@ import { task } from "hardhat/config";
 
 import addresses from "../../config/addresses";
 import { GATEWAY_URL } from "../../config/constants";
-import { CUSDC } from "../../types";
+import { CERC20 } from "../../types";
 
-task("approve", "Approve cERC20 contract to spend USDC")
+task("approve", "Approve cERC20 contract to spend tokens")
   .addParam("signeraddress", "signer address")
   .addParam("tokenaddress", "cERC20 contract address")
   .addParam("spenderaddress", "spender address")
@@ -30,9 +30,9 @@ task("approve", "Approve cERC20 contract to spend USDC")
     const input = instance.createEncryptedInput(tokenaddress, signer.address);
     const encryptedAmount = await input.add64(+amount).encrypt();
 
-    const cerc20 = (await ethers.getContractAt("cUSDC", tokenaddress, signer)) as unknown as CUSDC;
+    const cerc20 = (await ethers.getContractAt("cERC20", tokenaddress, signer)) as unknown as CERC20;
 
-    console.log("Approving spender to spend USDC");
+    console.log("Approving spender to spend tokens...");
     const txHash = await cerc20.approve(
       Typed.address(spenderaddress),
       Typed.bytes32(encryptedAmount.handles[0]),

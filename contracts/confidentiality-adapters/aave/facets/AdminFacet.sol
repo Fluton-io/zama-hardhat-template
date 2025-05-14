@@ -11,10 +11,13 @@ contract AdminFacet {
         _;
     }
 
-    function setCTokenAddress(address token, address cToken) external {
+    function setCTokenAddress(address[] memory tokens, address[] memory cTokens) external {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
-        s.tokenAddressToCTokenAddress[token] = cToken;
-        s.cTokenAddressToTokenAddress[cToken] = token;
+
+        for (uint256 i = 0; i < tokens.length; i++) {
+            s.tokenAddressToCTokenAddress[tokens[i]] = cTokens[i];
+            s.cTokenAddressToTokenAddress[cTokens[i]] = tokens[i];
+        }
     }
 
     function setAavePoolAddress(address pool) external {

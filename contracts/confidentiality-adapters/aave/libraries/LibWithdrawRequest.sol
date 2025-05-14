@@ -8,6 +8,7 @@ import { ConfidentialERC20Wrapped } from "../../../zama/ConfidentialERC20Wrapped
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IAToken.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 library LibWithdrawRequest {
     bytes4 constant WithdrawRequestFacet__callbackWithdrawRequest =
@@ -112,12 +113,15 @@ library LibWithdrawRequest {
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
 
-        s.aavePool.withdraw(asset, amount, address(this));
+        uint256 amountToWithdraw = amount *
+            (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
 
-        IERC20(asset).approve(cToken, amount);
-        ConfidentialERC20Wrapped(cToken).wrap(amount);
+        s.aavePool.withdraw(asset, amountToWithdraw, address(this));
 
-        emit LibAdapterStorage.WithdrawCallback(asset, amount, requestId);
+        IERC20(asset).approve(cToken, amountToWithdraw);
+        ConfidentialERC20Wrapped(cToken).wrap(amountToWithdraw);
+
+        emit LibAdapterStorage.WithdrawCallback(asset, uint64(amountToWithdraw), requestId);
     }
 
     function finalizeWithdrawRequest(uint256 requestId) internal {

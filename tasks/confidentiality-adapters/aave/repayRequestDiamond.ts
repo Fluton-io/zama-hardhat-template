@@ -9,6 +9,7 @@ import { GATEWAY_URL } from "../../../config/constants";
 task("repayRequest", "Repay tokens into Diamond RepayFacet")
   .addOptionalParam("signeraddress", "Signer address", undefined, types.string)
   .addOptionalParam("diamondaddress", "Diamond contract address", undefined, types.string)
+  .addOptionalParam("asset", "The supplied token address", undefined, types.string)
   .addOptionalParam("amount", "The supplied amount", "1000000", types.string)
   .addOptionalParam("interestRateMode", "The interest rate mode (1 for stable, 2 for variable)", "2", types.string)
   .setAction(async ({ signeraddress, diamondaddress, asset, amount, interestRateMode }, hre) => {
