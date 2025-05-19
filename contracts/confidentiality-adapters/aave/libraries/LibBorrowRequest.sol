@@ -8,6 +8,7 @@ import { ConfidentialERC20Wrapped } from "../../../zama/ConfidentialERC20Wrapped
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IAToken.sol";
 
 library LibBorrowRequest {
     bytes4 constant BorrowRequestFacet__callbackBorrowRequest =
@@ -127,18 +128,15 @@ library LibBorrowRequest {
 
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
-        uint16 referralCode = requests[0].referralCode;
-        // define interest rate mode
-        DataTypes.InterestRateMode interestRateMode = requests[0].interestRateMode;
 
         uint256 amountToBorrow = amount *
             (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
 
-        s.aavePool.borrow(asset, amountToBorrow, uint256(interestRateMode), referralCode, address(this));
-
         // wrap borrowed tokens
         IERC20(asset).approve(cToken, amountToBorrow);
         ConfidentialERC20Wrapped(cToken).wrap(amountToBorrow);
+
+        s.requestIdToAmount[requestId] = amountToBorrow;
 
         emit LibAdapterStorage.BorrowCallback(asset, uint64(amountToBorrow), requestId);
     }
@@ -156,29 +154,65 @@ library LibBorrowRequest {
             (LibAdapterStorage.BorrowRequestData[])
         );
 
-        address asset = requests[0].asset;
-        address cToken = s.tokenAddressToCTokenAddress[asset];
-
-        for (uint256 i = 0; i < requests.length; i++) {
-            address to = requests[i].sender;
-
-            // update user debt
-            s.userDebts[to][asset] = TFHE.add(s.userDebts[to][asset], requests[i].amount);
-            TFHE.allow(s.userDebts[to][asset], to);
-            TFHE.allowThis(s.userDebts[to][asset]);
-
-            // update user max borrowable
-            s.userMaxBorrowable[to] = TFHE.sub(s.userMaxBorrowable[to], requests[i].amount);
-            TFHE.allow(s.userMaxBorrowable[to], to);
-            TFHE.allowThis(s.userMaxBorrowable[to]);
-
-            TFHE.allow(requests[i].amount, cToken);
-            ConfidentialERC20Wrapped(cToken).transfer(to, requests[i].amount);
-        }
-
-        emit LibAdapterStorage.FinalizeBorrowRequest(asset, requestId);
+        _handleBorrowFinalize(s, requestId, requests);
 
         delete s.requestIdToRequestData[requestId];
         delete s.requestIdToBorrowRequests[requestId];
+        delete s.requestIdToAmount[requestId];
+    }
+
+    function _handleBorrowFinalize(
+        LibAdapterStorage.Storage storage s,
+        uint256 requestId,
+        LibAdapterStorage.BorrowRequestData[] memory requests
+    ) internal {
+        address asset = requests[0].asset;
+        address cToken = s.tokenAddressToCTokenAddress[asset];
+
+        address debtToken = s.aavePool.getReserveData(asset).variableDebtTokenAddress;
+        uint256 beforeScaledDebt = IScaledBalanceToken(debtToken).scaledBalanceOf(address(this));
+
+        DataTypes.InterestRateMode interestRateMode = requests[0].interestRateMode;
+        uint16 referralCode = requests[0].referralCode;
+        uint256 amount = s.requestIdToAmount[requestId];
+        uint256 amountToBorrow = amount *
+            (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
+
+        s.aavePool.borrow(asset, amountToBorrow, uint256(interestRateMode), referralCode, address(this));
+
+        uint256 afterScaledDebt = IScaledBalanceToken(debtToken).scaledBalanceOf(address(this));
+        uint256 difference = afterScaledDebt - beforeScaledDebt;
+        uint64 tokenDecimals = IERC20Metadata(asset).decimals();
+        uint256 multiplier = difference / (amountToBorrow / (10 ** tokenDecimals));
+
+        _processUserScaledDebts(s, requests, multiplier, asset, cToken);
+
+        emit LibAdapterStorage.FinalizeBorrowRequest(asset, requestId);
+    }
+
+    function _processUserScaledDebts(
+        LibAdapterStorage.Storage storage s,
+        LibAdapterStorage.BorrowRequestData[] memory requests,
+        uint256 multiplier,
+        address asset,
+        address cToken
+    ) internal {
+        for (uint256 i = 0; i < requests.length; i++) {
+            address to = requests[i].sender;
+            euint64 requestAmount = requests[i].amount;
+
+            euint64 addedScaledDebt = TFHE.div(TFHE.mul(requestAmount, uint64(multiplier)), 1e6);
+            s.scaledDebts[to][asset] = TFHE.add(s.scaledDebts[to][asset], addedScaledDebt);
+
+            TFHE.allow(s.scaledDebts[to][asset], to);
+            TFHE.allowThis(s.scaledDebts[to][asset]);
+
+            s.userMaxBorrowable[to] = TFHE.sub(s.userMaxBorrowable[to], requestAmount);
+            TFHE.allow(s.userMaxBorrowable[to], to);
+            TFHE.allowThis(s.userMaxBorrowable[to]);
+
+            TFHE.allow(requestAmount, cToken);
+            ConfidentialERC20Wrapped(cToken).transfer(to, requestAmount);
+        }
     }
 }

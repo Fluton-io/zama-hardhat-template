@@ -4,8 +4,8 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 
 import { getSelectors } from "./getSelectors";
 
-const facetName = process.env.FACET_NAME || "WithdrawFacet";
-const diamondAddress = process.env.DIAMOND_ADDRESS || "0x679266EA6DEEE3890063cB7280B114a7A7cebd6f";
+const facetName = process.env.FACET_NAME || "SupplyFacet";
+const diamondAddress = process.env.DIAMOND_ADDRESS || "0x4410c46faC3e8A02CDcD04f295B321bADE936865";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const { deployer } = await hre.getNamedAccounts();

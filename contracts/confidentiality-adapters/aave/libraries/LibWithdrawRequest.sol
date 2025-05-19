@@ -17,9 +17,12 @@ library LibWithdrawRequest {
     function withdrawRequest(address asset, euint64 amount) internal {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
-        //  check if the user has enough supplied balance
-        euint64 maxWithdrawable = s.scaledBalances[msg.sender];
-        euint64 safeAmount = TFHE.select(TFHE.le(amount, maxWithdrawable), amount, TFHE.asEuint64(0));
+        // Calculate withdrawable scaled balance = scaledBalances - scaledDebts
+        euint64 suppliedScaledBalance = s.scaledBalances[msg.sender][asset];
+        euint64 debtScaledBalance = s.scaledDebts[msg.sender][asset];
+        euint64 withdrawableScaledBalance = TFHE.sub(suppliedScaledBalance, debtScaledBalance);
+
+        euint64 safeAmount = TFHE.select(TFHE.le(amount, withdrawableScaledBalance), amount, TFHE.asEuint64(0));
 
         s.withdrawRequests.push(
             LibAdapterStorage.WithdrawRequestData({
@@ -143,10 +146,13 @@ library LibWithdrawRequest {
 
         for (uint256 i = 0; i < requests.length; i++) {
             // Subtract the amount withdrawn
-            s.scaledBalances[requests[i].sender] = TFHE.sub(s.scaledBalances[requests[i].sender], requests[i].amount);
+            s.scaledBalances[requests[i].sender][asset] = TFHE.sub(
+                s.scaledBalances[requests[i].sender][asset],
+                requests[i].amount
+            );
 
-            TFHE.allow(s.scaledBalances[requests[i].sender], requests[i].sender);
-            TFHE.allowThis(s.scaledBalances[requests[i].sender]);
+            TFHE.allow(s.scaledBalances[requests[i].sender][asset], requests[i].sender);
+            TFHE.allowThis(s.scaledBalances[requests[i].sender][asset]);
 
             // Update max borrowable - subtract proportionally to withdrawn amount
             euint64 reducedBorrowable = TFHE.div(TFHE.mul(requests[i].amount, uint64(8000)), uint64(10000)); // LTV 80%

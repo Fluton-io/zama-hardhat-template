@@ -65,7 +65,8 @@ library LibAdapterStorage {
         mapping(uint256 => RequestData) requestIdToRequestData;
         mapping(uint256 => uint256) requestIdToAmount;
         mapping(uint256 => uint256) requestIdToUnwrapRequestId;
-        mapping(address => euint64) scaledBalances;
+        mapping(address => mapping(address => euint64)) scaledBalances;
+        mapping(address => mapping(address => euint64)) scaledDebts; // user => asset => scaledDebt
         mapping(address => euint64) userMaxBorrowable;
         mapping(address => mapping(address => euint64)) userDebts;
     }

@@ -44,6 +44,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
   console.log("RepayFacet deployed at:", repayFacetDeployment.address);
 
+  const getterFacetDeployment = await deploy("GetterFacet", {
+    from: deployer,
+    log: true,
+  });
+  console.log("GetterFacet deployed at:", getterFacetDeployment.address);
+
   const supplyCut = {
     facetAddress: supplyFacetDeployment.address,
     action: 0,
@@ -76,6 +82,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     ),
   };
 
+  const getterCut = {
+    facetAddress: getterFacetDeployment.address,
+    action: 0,
+    functionSelectors: getSelectors(
+      (await hre.ethers.getContractAt("GetterFacet", getterFacetDeployment.address)) as unknown as Contract,
+    ),
+  };
+
   const diamond = await hre.ethers.getContractAt("Diamond", diamondDeployment.address);
 
   console.log("Performing SupplyFacet diamondCut...");
@@ -98,6 +112,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   await tx4.wait();
   console.log("RepayFacet diamond cut completed.");
 
+  console.log("Performing GetterFacet diamondCut...");
+  const tx5 = await diamond.diamondCut([getterCut]);
+  await tx5.wait();
+  console.log("GetterFacet diamond cut completed.");
+
   const adminFacetDeployment = await deploy("AdminFacet", {
     from: deployer,
     log: true,
@@ -116,8 +135,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Cut AdminFacet into diamond
   console.log("Performing AdminFacet diamondCut...");
 
-  const tx5 = await diamond.diamondCut([adminCut]);
-  await tx5.wait();
+  const tx6 = await diamond.diamondCut([adminCut]);
+  await tx6.wait();
   console.log("AdminFacet diamond cut completed.");
 
   const adminFacet = await hre.ethers.getContractAt("AdminFacet", diamondDeployment.address);
@@ -147,7 +166,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   await adminFacet.setCTokenAddress(
     [addresses[+chainId].AAVE_USDC, addresses[+chainId].AAVE_USDT, addresses[+chainId].AAVE_DAI], // aave usdc, aave usdt, aave dai
     [
-      "0x4A644e2dA7B7b3ff57Afc4a50aE4Bc9f4628B4a4",
+      "0x7aC5c262BF273699332593173bdf606837c04A2e",
       "0xf48129D7b3EdD4A429EFcA86380e7c0978b615cc",
       "0xF01B9BC9059a432aA16b7111A13fD0d10E183E8E",
     ], // cusdc, cusdt, cdai

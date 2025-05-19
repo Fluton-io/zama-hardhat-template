@@ -8,6 +8,7 @@ import { ConfidentialERC20Wrapped } from "../../../zama/ConfidentialERC20Wrapped
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { IScaledBalanceToken } from "@aave/core-v3/contracts/interfaces/IAToken.sol";
 
 library LibRepayRequest {
     bytes4 constant RepayRequestFacet__callbackRepayRequest = bytes4(keccak256("callbackRepayRequest(uint256,uint64)"));
@@ -15,8 +16,12 @@ library LibRepayRequest {
     function repayRequest(address asset, euint64 amount, DataTypes.InterestRateMode interestRateMode) internal {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
-        euint64 userDebt = s.userDebts[msg.sender][asset];
-        euint64 safeAmount = TFHE.select(TFHE.le(amount, userDebt), amount, TFHE.asEuint64(0));
+        euint64 scaledDebt = s.scaledDebts[msg.sender][asset];
+        uint256 reserveNormalizedDebt = s.aavePool.getReserveNormalizedVariableDebt(asset);
+
+        euint256 realDebt = TFHE.div(TFHE.mul(TFHE.asEuint256(scaledDebt), reserveNormalizedDebt), 1e27);
+
+        euint64 safeAmount = TFHE.select(TFHE.le(TFHE.asEuint64(realDebt), amount), TFHE.asEuint64(realDebt), amount);
 
         address cToken = s.tokenAddressToCTokenAddress[asset];
         if (cToken == address(0)) {
@@ -156,17 +161,27 @@ library LibRepayRequest {
             revert LibAdapterStorage.AmountIsZero();
         }
         address asset = requests[0].asset;
+        address debtToken = s.aavePool.getReserveData(asset).variableDebtTokenAddress;
+
+        uint256 beforeScaledDebt = IScaledBalanceToken(debtToken).scaledBalanceOf(address(this));
 
         IERC20(asset).approve(address(s.aavePool), amount);
         s.aavePool.repay(asset, amount, uint256(requests[0].interestRateMode), address(this));
 
+        uint256 afterScaledDebt = IScaledBalanceToken(debtToken).scaledBalanceOf(address(this));
+
+        uint256 difference = beforeScaledDebt - afterScaledDebt;
+        uint8 tokenDecimals = IERC20Metadata(asset).decimals();
+        uint256 multiplier = difference / (amount / (10 ** tokenDecimals));
+
         for (uint256 i = 0; i < requests.length; i++) {
             address user = requests[i].sender;
 
-            //decrease user's enrypteddebt
-            s.userDebts[user][asset] = TFHE.sub(s.userDebts[user][asset], requests[i].amount);
-            TFHE.allow(s.userDebts[user][asset], user);
-            TFHE.allowThis(s.userDebts[user][asset]);
+            euint64 reducedScaledDebt = TFHE.div(TFHE.mul(requests[i].amount, uint64(multiplier)), 1e6);
+            s.scaledDebts[user][asset] = TFHE.sub(s.scaledDebts[user][asset], reducedScaledDebt);
+
+            TFHE.allow(s.scaledDebts[user][asset], user);
+            TFHE.allowThis(s.scaledDebts[user][asset]);
 
             //update user's max borrowable
             s.userMaxBorrowable[user] = TFHE.add(s.userMaxBorrowable[user], requests[i].amount);

@@ -32,15 +32,7 @@ library LibSupplyRequest {
             })
         );
 
-        if (!TFHE.isInitialized(s.scaledBalances[msg.sender])) {
-            s.scaledBalances[msg.sender] = TFHE.asEuint64(0);
-            TFHE.allowThis(s.scaledBalances[msg.sender]);
-        }
-
-        if (!TFHE.isInitialized(s.userMaxBorrowable[msg.sender])) {
-            s.userMaxBorrowable[msg.sender] = TFHE.asEuint64(0);
-            TFHE.allowThis(s.userMaxBorrowable[msg.sender]);
-        }
+        _initMappings(asset);
 
         emit LibAdapterStorage.SupplyRequested(asset, msg.sender, msg.sender, amount, referralCode);
 
@@ -77,6 +69,25 @@ library LibSupplyRequest {
 
         if (requests.length >= s.REQUEST_THRESHOLD) {
             _processSupplyRequests(s, requests, matchedIndexes);
+        }
+    }
+
+    function _initMappings(address asset) internal {
+        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
+
+        if (!TFHE.isInitialized(s.scaledBalances[msg.sender][asset])) {
+            s.scaledBalances[msg.sender][asset] = TFHE.asEuint64(0);
+            TFHE.allowThis(s.scaledBalances[msg.sender][asset]);
+        }
+
+        if (!TFHE.isInitialized(s.scaledDebts[msg.sender][asset])) {
+            s.scaledDebts[msg.sender][asset] = TFHE.asEuint64(0);
+            TFHE.allowThis(s.scaledDebts[msg.sender][asset]);
+        }
+
+        if (!TFHE.isInitialized(s.userMaxBorrowable[msg.sender])) {
+            s.userMaxBorrowable[msg.sender] = TFHE.asEuint64(0);
+            TFHE.allowThis(s.userMaxBorrowable[msg.sender]);
         }
     }
 
@@ -155,16 +166,18 @@ library LibSupplyRequest {
 
         uint256 afterScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
         uint256 difference = afterScaledBalance - beforeScaledBalance;
-        uint8 tokenDecimals = IERC20Metadata(asset).decimals();
-        uint256 multiplier = difference / (amount / (10 ** tokenDecimals));
+        //uint256 tokenDecimals = IERC20Metadata(asset).decimals();
+
+        uint256 multiplier = difference / (amount / (10 ** 6));
 
         // update each user's scaled balances and max borrowable
         for (uint256 i = 0; i < requests.length; i++) {
             euint64 newBalance = TFHE.add(
-                s.scaledBalances[requests[i].sender],
+                s.scaledBalances[requests[i].sender][asset],
                 TFHE.div(TFHE.mul(requests[i].amount, uint64(multiplier)), 1e6)
             );
-            s.scaledBalances[requests[i].sender] = newBalance;
+            s.scaledBalances[requests[i].sender][asset] = newBalance;
+
             TFHE.allowThis(newBalance);
             TFHE.allow(newBalance, requests[i].sender);
 
