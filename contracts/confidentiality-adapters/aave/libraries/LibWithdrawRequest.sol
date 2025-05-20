@@ -116,7 +116,10 @@ library LibWithdrawRequest {
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
 
-        uint256 amountToWithdraw = amount *
+        uint256 liquidityIndex = s.aavePool.getReserveNormalizedIncome(asset);
+        uint256 amountWithInterest = (uint256(amount) * liquidityIndex) / 1e27;
+
+        uint256 amountToWithdraw = amountWithInterest *
             (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
 
         s.aavePool.withdraw(asset, amountToWithdraw, address(this));

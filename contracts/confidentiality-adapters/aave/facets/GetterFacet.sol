@@ -33,8 +33,6 @@ contract GetterFacet {
     /// @notice Returns user's withdrawable amount (supplied - borrowed) in encrypted space
     function getScaledDebt(address user, address asset) external view returns (euint64) {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
-
-        // Get scaled debts
         euint64 debtScaledBalance = s.scaledDebts[user][asset];
 
         return debtScaledBalance;

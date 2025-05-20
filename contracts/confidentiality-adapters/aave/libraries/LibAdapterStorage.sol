@@ -73,6 +73,7 @@ library LibAdapterStorage {
 
     error AmountIsZero();
     error InvalidRequestType();
+    error NotEnoughSupplyRequest();
     error NotEnoughBorrowRequest();
     error NotEnoughRepayRequest();
     error InvalidCTokenAddress(address asset);

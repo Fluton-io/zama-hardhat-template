@@ -186,3 +186,54 @@ task("getWithdrawableAmount", "Get user's withdrawable amount from adapter")
 
     console.log("Withdrawable balance (normalized DAI units):", withdrawable.toString());
   });
+
+task("getScaledDebt", "Get user's scaled debt from adapter")
+  .addParam("signeraddress", "Signer address")
+  .addParam("diamondaddress", "Diamond contract address")
+  .addParam("asset", "Underlying asset address")
+  .addOptionalParam("address", "User Address")
+  .setAction(async ({ signeraddress, diamondaddress, asset, address }, hre) => {
+    const { ethers, getChainId, deployments } = hre;
+    const chainId = await getChainId();
+    const signer = await ethers.getSigner(signeraddress);
+
+    if (!addresses[+chainId]) {
+      throw new Error("Chain ID not supported");
+    }
+
+    if (!diamondaddress) {
+      diamondaddress = (await deployments.get("Diamond")).address;
+    }
+
+    if (!address) {
+      address = signer.address;
+    }
+
+    const instance = await createFhevmInstance({
+      kmsContractAddress: addresses[+chainId].KMSVERIFIER,
+      aclContractAddress: addresses[+chainId].ACL,
+      networkUrl: hre.network.config.url,
+      gatewayUrl: GATEWAY_URL,
+    });
+
+    const { publicKey, privateKey } = instance.generateKeypair();
+    const eip712 = instance.createEIP712(publicKey, diamondaddress);
+    const signature = await signer.signTypedData(eip712.domain, { Reencrypt: eip712.types.Reencrypt }, eip712.message);
+
+    const adapter = await ethers.getContractAt("GetterFacet", diamondaddress, signer);
+
+    const encryptedDebt = await adapter.getScaledDebt(address, asset);
+
+    console.info("Encrypted scaled debt:", encryptedDebt);
+
+    const userBalance = await instance.reencrypt(
+      encryptedDebt,
+      privateKey,
+      publicKey,
+      signature,
+      diamondaddress,
+      address,
+    );
+
+    console.log("Decrypted scaled debt:", userBalance);
+  });

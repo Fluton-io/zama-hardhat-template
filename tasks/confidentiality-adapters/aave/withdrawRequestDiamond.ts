@@ -45,12 +45,14 @@ task("withdrawRequest", "Withdraw tokens from Aave via Diamond")
     // Connect to Diamond as withdrawFacet
     const withdrawFacet = await ethers.getContractAt("WithdrawFacet", diamondaddress, signer);
 
-    const txHash = await withdrawFacet.withdrawRequest(
+    const tx = await withdrawFacet.withdrawRequest(
       Typed.address(asset),
       Typed.bytes32(encryptedAmount.handles[0]),
       Typed.bytes(encryptedAmount.inputProof),
     );
-    console.info("Withdraw tx receipt: ", txHash);
+    console.info("Withdraw tx receipt: ", tx.hash);
+    await tx.wait();
+    console.info("Withdraw transaction confirmed.");
   });
 
 task("finalizeWithdrawRequest", "Finalize the withdraw requests via Diamond")
@@ -80,5 +82,5 @@ task("finalizeWithdrawRequest", "Finalize the withdraw requests via Diamond")
     console.info("Finalize withdraw tx hash: ", tx.hash);
 
     await tx.wait();
-    console.info("Withdraw request finalized ", tx.hash);
+    console.info("Withdraw request finalized ");
   });

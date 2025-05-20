@@ -17,7 +17,7 @@ library LibSupplyRequest {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         address cToken = s.tokenAddressToCTokenAddress[asset];
-        require(cToken != address(0), "CToken not found");
+        if (cToken == address(0)) revert LibAdapterStorage.InvalidCTokenAddress(cToken);
 
         // Allow and pull cToken from user
         TFHE.allow(amount, cToken);
@@ -83,6 +83,7 @@ library LibSupplyRequest {
         if (!TFHE.isInitialized(s.scaledDebts[msg.sender][asset])) {
             s.scaledDebts[msg.sender][asset] = TFHE.asEuint64(0);
             TFHE.allowThis(s.scaledDebts[msg.sender][asset]);
+            TFHE.allow(s.scaledDebts[msg.sender][asset], msg.sender);
         }
 
         if (!TFHE.isInitialized(s.userMaxBorrowable[msg.sender])) {
@@ -132,11 +133,9 @@ library LibSupplyRequest {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         LibAdapterStorage.SupplyRequestData[] memory requests = s.requestIdToSupplyRequests[requestId];
-        require(requests.length > 0, "LibSupplyRequest: No supply requests found");
 
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
-        require(cToken != address(0), "LibSupplyRequest: Invalid cToken");
 
         ConfidentialERC20Wrapped(cToken).unwrap(amount);
 
@@ -151,11 +150,11 @@ library LibSupplyRequest {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         LibAdapterStorage.SupplyRequestData[] memory requests = s.requestIdToSupplyRequests[supplyRequestId];
-        require(requests.length >= s.REQUEST_THRESHOLD, "LibSupplyRequest: not enough supply requests");
+        if (requests.length < s.REQUEST_THRESHOLD) revert LibAdapterStorage.NotEnoughSupplyRequest();
 
         uint256 unwrapRequestId = s.requestIdToUnwrapRequestId[supplyRequestId];
         uint256 amount = s.requestIdToAmount[unwrapRequestId];
-        require(amount > 0, "LibSupplyRequest: invalid amount");
+        if (amount == 0) revert LibAdapterStorage.AmountIsZero();
 
         address asset = requests[0].asset;
         address aToken = s.aavePool.getReserveData(asset).aTokenAddress;
@@ -166,7 +165,6 @@ library LibSupplyRequest {
 
         uint256 afterScaledBalance = IScaledBalanceToken(aToken).scaledBalanceOf(address(this));
         uint256 difference = afterScaledBalance - beforeScaledBalance;
-        //uint256 tokenDecimals = IERC20Metadata(asset).decimals();
 
         uint256 multiplier = difference / (amount / (10 ** 6));
 
