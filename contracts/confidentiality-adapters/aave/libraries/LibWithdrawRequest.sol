@@ -157,13 +157,13 @@ library LibWithdrawRequest {
             TFHE.allow(s.scaledBalances[requests[i].sender][asset], requests[i].sender);
             TFHE.allowThis(s.scaledBalances[requests[i].sender][asset]);
 
-            // Update max borrowable - subtract proportionally to withdrawn amount
-            euint64 reducedBorrowable = TFHE.div(TFHE.mul(requests[i].amount, uint64(8000)), uint64(10000)); // LTV 80%
+            // Update max borrowable
+            (, , , , uint256 ltv, ) = s.aavePool.getUserAccountData(address(this));
+            euint64 currentBalance = s.scaledBalances[requests[i].sender][asset];
+            s.userMaxBorrowable[requests[i].sender] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
 
-            s.userMaxBorrowable[requests[i].sender] = TFHE.sub(
-                s.userMaxBorrowable[requests[i].sender],
-                reducedBorrowable
-            );
+            TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
+            TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
 
             // Allow permissions
             TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);

@@ -179,13 +179,14 @@ library LibSupplyRequest {
             TFHE.allowThis(newBalance);
             TFHE.allow(newBalance, requests[i].sender);
 
-            // calculate and update max borrowable
-            euint64 addedBorrowable = TFHE.div(TFHE.mul(requests[i].amount, uint64(8000)), uint64(10000)); // LTV 80%
+            (, , , , uint256 ltv, ) = s.aavePool.getUserAccountData(address(this));
 
-            s.userMaxBorrowable[requests[i].sender] = TFHE.add(
-                s.userMaxBorrowable[requests[i].sender],
-                addedBorrowable
-            );
+            // calculate and update max borrowable
+            euint64 currentBalance = s.scaledBalances[requests[i].sender][asset];
+            s.userMaxBorrowable[requests[i].sender] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
+
+            TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
+            TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
 
             TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
             TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);

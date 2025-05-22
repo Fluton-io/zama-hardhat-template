@@ -142,7 +142,6 @@ library LibRepayRequest {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         LibAdapterStorage.RequestData memory requestData = s.requestIdToRequestData[repayRequestId];
-
         if (requestData.requestType != LibAdapterStorage.RequestType.REPAY) {
             revert LibAdapterStorage.InvalidRequestType();
         }
@@ -153,27 +152,49 @@ library LibRepayRequest {
         );
 
         uint256 unwrapRequestId = s.requestIdToUnwrapRequestId[repayRequestId];
-        if (unwrapRequestId == 0) {
-            revert LibAdapterStorage.NoUnwrapRequestIdFound();
-        }
+        if (unwrapRequestId == 0) revert LibAdapterStorage.NoUnwrapRequestIdFound();
+
         uint256 amount = s.requestIdToAmount[unwrapRequestId];
-        if (amount == 0) {
-            revert LibAdapterStorage.AmountIsZero();
-        }
+        if (amount == 0) revert LibAdapterStorage.AmountIsZero();
+
         address asset = requests[0].asset;
+
+        uint256 multiplier = _repayAndGetDebtDelta(s, asset, amount, requests[0].interestRateMode);
+        _applyRepayToUsers(s, requests, multiplier, asset);
+
+        emit LibAdapterStorage.FinalizeRepayRequest(asset, repayRequestId);
+
+        delete s.requestIdToRepayRequests[repayRequestId];
+        delete s.requestIdToRequestData[repayRequestId];
+        delete s.requestIdToAmount[unwrapRequestId];
+        delete s.requestIdToUnwrapRequestId[repayRequestId];
+    }
+
+    function _repayAndGetDebtDelta(
+        LibAdapterStorage.Storage storage s,
+        address asset,
+        uint256 amount,
+        DataTypes.InterestRateMode interestRateMode
+    ) internal returns (uint256 multiplier) {
         address debtToken = s.aavePool.getReserveData(asset).variableDebtTokenAddress;
 
         uint256 beforeScaledDebt = IScaledBalanceToken(debtToken).scaledBalanceOf(address(this));
-
         IERC20(asset).approve(address(s.aavePool), amount);
-        s.aavePool.repay(asset, amount, uint256(requests[0].interestRateMode), address(this));
+
+        s.aavePool.repay(asset, amount, uint256(interestRateMode), address(this));
 
         uint256 afterScaledDebt = IScaledBalanceToken(debtToken).scaledBalanceOf(address(this));
-
         uint256 difference = beforeScaledDebt - afterScaledDebt;
-        uint8 tokenDecimals = IERC20Metadata(asset).decimals();
-        uint256 multiplier = difference / (amount / (10 ** tokenDecimals));
 
+        multiplier = difference / (amount / 1e6);
+    }
+
+    function _applyRepayToUsers(
+        LibAdapterStorage.Storage storage s,
+        LibAdapterStorage.RepayRequestData[] memory requests,
+        uint256 multiplier,
+        address asset
+    ) internal {
         for (uint256 i = 0; i < requests.length; i++) {
             address user = requests[i].sender;
 
@@ -183,17 +204,14 @@ library LibRepayRequest {
             TFHE.allow(s.scaledDebts[user][asset], user);
             TFHE.allowThis(s.scaledDebts[user][asset]);
 
-            //update user's max borrowable
-            s.userMaxBorrowable[user] = TFHE.add(s.userMaxBorrowable[user], requests[i].amount);
+            // update max borrowable
+            (, , , , uint256 ltv, ) = s.aavePool.getUserAccountData(address(this));
+            euint64 currentBalance = s.scaledBalances[user][asset];
+
+            s.userMaxBorrowable[user] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
+
             TFHE.allow(s.userMaxBorrowable[user], user);
             TFHE.allowThis(s.userMaxBorrowable[user]);
         }
-
-        emit LibAdapterStorage.FinalizeRepayRequest(asset, repayRequestId);
-
-        delete s.requestIdToRepayRequests[repayRequestId];
-        delete s.requestIdToRequestData[repayRequestId];
-        delete s.requestIdToAmount[unwrapRequestId];
-        delete s.requestIdToUnwrapRequestId[repayRequestId];
     }
 }
