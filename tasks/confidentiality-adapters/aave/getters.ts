@@ -237,4 +237,11 @@ task("getScaledDebt", "Get user's scaled debt from adapter")
     );
 
     console.log("Decrypted scaled debt:", userBalance);
+
+    const aavePool = await ethers.getContractAt(Pool.abi, addresses[+chainId].AAVE_POOL, signer);
+    const normalizedBalance: bigint = await aavePool.getReserveNormalizedVariableDebt(asset);
+
+    console.log("Reserve normalized variable debt:", normalizedBalance);
+    const scaledDebt = (userBalance * normalizedBalance) / BigInt(1e27);
+    console.log("Scaled debt (normalized):", scaledDebt.toString());
   });

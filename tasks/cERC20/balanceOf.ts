@@ -48,5 +48,5 @@ task("balanceOf", "Get user balance")
       signer.address, // The user address where the ciphertext is
     );
 
-    console.log("Decrypted balance: ", userBalance);
+    console.log("Decrypted balance: ", Number(userBalance.toString()) / 10 ** 6);
   });

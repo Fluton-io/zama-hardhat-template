@@ -20,8 +20,7 @@ library LibRepayRequest {
         uint256 reserveNormalizedDebt = s.aavePool.getReserveNormalizedVariableDebt(asset);
 
         euint256 realDebt = TFHE.div(TFHE.mul(TFHE.asEuint256(scaledDebt), reserveNormalizedDebt), 1e27);
-
-        euint64 safeAmount = TFHE.select(TFHE.le(TFHE.asEuint64(realDebt), amount), TFHE.asEuint64(realDebt), amount);
+        euint64 safeAmount = TFHE.select(TFHE.le(amount, TFHE.asEuint64(realDebt)), amount, TFHE.asEuint64(realDebt));
 
         address cToken = s.tokenAddressToCTokenAddress[asset];
         if (cToken == address(0)) {
@@ -91,7 +90,7 @@ library LibRepayRequest {
             cts,
             RepayRequestFacet__callbackRepayRequest,
             0,
-            block.timestamp + 100,
+            block.timestamp + 500,
             false
         );
 
