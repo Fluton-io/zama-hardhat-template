@@ -116,16 +116,13 @@ library LibWithdrawRequest {
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
 
-        uint256 liquidityIndex = s.aavePool.getReserveNormalizedIncome(asset);
-        uint256 amountWithInterest = (uint256(amount) * liquidityIndex) / 1e27;
-
-        uint256 amountToWithdraw = amountWithInterest *
+        uint256 amountToWithdraw = amount *
             (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
 
         s.aavePool.withdraw(asset, amountToWithdraw, address(this));
 
-        IERC20(asset).approve(cToken, amountToWithdraw);
-        ConfidentialERC20Wrapped(cToken).wrap(amountToWithdraw);
+        IERC20(asset).approve(cToken, amount);
+        ConfidentialERC20Wrapped(cToken).wrap(amount);
 
         emit LibAdapterStorage.WithdrawCallback(asset, uint64(amountToWithdraw), requestId);
     }
@@ -147,6 +144,20 @@ library LibWithdrawRequest {
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
 
+        _processStateUpdates(s, requests, asset, cToken);
+
+        emit LibAdapterStorage.FinalizeWithdrawRequest(asset, requestId);
+
+        delete s.requestIdToWithdrawRequests[requestId];
+        delete s.requestIdToRequestData[requestId];
+    }
+
+    function _processStateUpdates(
+        LibAdapterStorage.Storage storage s,
+        LibAdapterStorage.WithdrawRequestData[] memory requests,
+        address asset,
+        address cToken
+    ) internal {
         for (uint256 i = 0; i < requests.length; i++) {
             // Subtract the amount withdrawn
             s.scaledBalances[requests[i].sender][asset] = TFHE.sub(
@@ -157,27 +168,30 @@ library LibWithdrawRequest {
             TFHE.allow(s.scaledBalances[requests[i].sender][asset], requests[i].sender);
             TFHE.allowThis(s.scaledBalances[requests[i].sender][asset]);
 
-            // Update max borrowable
-            (, , , , uint256 ltv, ) = s.aavePool.getUserAccountData(address(this));
-            euint64 currentBalance = s.scaledBalances[requests[i].sender][asset];
-            s.userMaxBorrowable[requests[i].sender] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
+            euint64 scaledBalance = s.scaledBalances[requests[i].sender][asset];
 
-            TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
-            TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
-
-            // Allow permissions
-            TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
-            TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
+            _setMaxBorrowables(scaledBalance, requests[i].sender);
 
             // transfer the asset to the user
             TFHE.allow(requests[i].amount, cToken);
             TFHE.allowThis(requests[i].amount);
             ConfidentialERC20Wrapped(cToken).transfer(requests[i].to, requests[i].amount);
         }
+    }
 
-        emit LibAdapterStorage.FinalizeWithdrawRequest(asset, requestId);
+    function _setMaxBorrowables(euint64 currentBalance, address sender) internal {
+        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
-        delete s.requestIdToWithdrawRequests[requestId];
-        delete s.requestIdToRequestData[requestId];
+        address[] memory aaveAssets = s.aaveAssets;
+        for (uint256 i = 0; i < aaveAssets.length; i++) {
+            address asset = aaveAssets[i];
+
+            (, uint256 ltv, , , , , , , , ) = s.aaveDataProvider.getReserveConfigurationData(asset);
+
+            s.userMaxBorrowablePerAsset[sender][asset] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
+
+            TFHE.allow(s.userMaxBorrowablePerAsset[sender][asset], sender);
+            TFHE.allowThis(s.userMaxBorrowablePerAsset[sender][asset]);
+        }
     }
 }

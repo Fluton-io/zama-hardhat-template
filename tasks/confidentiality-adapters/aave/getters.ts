@@ -66,10 +66,10 @@ task("getSuppliedBalance", "Get user's supplied balance from adapter")
 
 task("getMaxBorrowable", "Get user's max borrowable amount from adapter")
   .addParam("signeraddress", "Signer address")
-  .addOptionalParam("diamondaddress", "Diamond contract address")
   .addParam("asset", "Underlying asset address")
+  .addOptionalParam("diamondaddress", "Diamond contract address")
   .addOptionalParam("address", "User Address")
-  .setAction(async ({ signeraddress, diamondaddress, asset, address }, hre) => {
+  .setAction(async ({ signeraddress, asset, diamondaddress, address }, hre) => {
     const { ethers, getChainId, deployments } = hre;
     const chainId = await getChainId();
     const signer = await ethers.getSigner(signeraddress);
@@ -99,7 +99,7 @@ task("getMaxBorrowable", "Get user's max borrowable amount from adapter")
 
     const adapter = await ethers.getContractAt("GetterFacet", diamondaddress, signer);
 
-    const encryptedBalance = await adapter.getMaxBorrowable(address);
+    const encryptedBalance = await adapter.getMaxBorrowable(address, asset);
 
     console.info("Encrypted max borrowable amount:", encryptedBalance);
 
@@ -113,14 +113,6 @@ task("getMaxBorrowable", "Get user's max borrowable amount from adapter")
     );
 
     console.log("Decrypted max borrowable amount:", userBalance);
-
-    const aavePool = await ethers.getContractAt(Pool.abi, addresses[+chainId].AAVE_POOL, signer);
-    const normalizedBalance: bigint = await aavePool.getReserveNormalizedIncome(asset);
-
-    console.log("Reserve normalized income:", normalizedBalance);
-    const borrowableBalance = (userBalance * normalizedBalance) / BigInt(1e27);
-
-    console.log("Borrowable balance (normalized):", borrowableBalance.toString());
   });
 
 task("getWithdrawableAmount", "Get user's withdrawable amount from adapter")

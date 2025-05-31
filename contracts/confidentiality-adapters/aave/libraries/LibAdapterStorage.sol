@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
 import { IPool } from "@aave/core-v3/contracts/interfaces/IPool.sol";
+import { IPoolDataProvider } from "@aave/core-v3/contracts/interfaces/IPoolDataProvider.sol";
 import { DataTypes } from "@aave/core-v3/contracts/protocol/libraries/types/DataTypes.sol";
 
 library LibAdapterStorage {
@@ -52,10 +53,12 @@ library LibAdapterStorage {
     struct Storage {
         uint8 REQUEST_THRESHOLD;
         IPool aavePool;
+        IPoolDataProvider aaveDataProvider;
         SupplyRequestData[] supplyRequests;
         WithdrawRequestData[] withdrawRequests;
         BorrowRequestData[] borrowRequests;
         RepayRequestData[] repayRequests;
+        address[] aaveAssets;
         mapping(address => address) tokenAddressToCTokenAddress;
         mapping(address => address) cTokenAddressToTokenAddress;
         mapping(uint256 => SupplyRequestData[]) requestIdToSupplyRequests;
@@ -65,10 +68,9 @@ library LibAdapterStorage {
         mapping(uint256 => RequestData) requestIdToRequestData;
         mapping(uint256 => uint256) requestIdToAmount;
         mapping(uint256 => uint256) requestIdToUnwrapRequestId;
-        mapping(address => mapping(address => euint64)) scaledBalances;
+        mapping(address => mapping(address => euint64)) scaledBalances; // user => asset => scaledBalance
         mapping(address => mapping(address => euint64)) scaledDebts; // user => asset => scaledDebt
-        mapping(address => euint64) userMaxBorrowable;
-        mapping(address => mapping(address => euint64)) userDebts;
+        mapping(address => mapping(address => euint64)) userMaxBorrowablePerAsset; // user => asset => maxBorrowable
     }
 
     error AmountIsZero();
@@ -109,7 +111,7 @@ library LibAdapterStorage {
         bool useATokens
     );
 
-    event FinalizeSupplyRequest(address reserve, uint256 requestId);
+    event FinalizeSupplyRequest(address reserve, uint256 requestId, uint256 multiplier, uint256 amount);
     event FinalizeWithdrawRequest(address reserve, uint256 requestId);
     event FinalizeBorrowRequest(address reserve, uint256 requestId);
     event FinalizeRepayRequest(address reserve, uint256 requestId);

@@ -32,8 +32,6 @@ library LibSupplyRequest {
             })
         );
 
-        _initMappings(asset);
-
         emit LibAdapterStorage.SupplyRequested(asset, msg.sender, msg.sender, amount, referralCode);
 
         if (s.supplyRequests.length < s.REQUEST_THRESHOLD) {
@@ -69,26 +67,6 @@ library LibSupplyRequest {
 
         if (requests.length >= s.REQUEST_THRESHOLD) {
             _processSupplyRequests(s, requests, matchedIndexes);
-        }
-    }
-
-    function _initMappings(address asset) internal {
-        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
-
-        if (!TFHE.isInitialized(s.scaledBalances[msg.sender][asset])) {
-            s.scaledBalances[msg.sender][asset] = TFHE.asEuint64(0);
-            TFHE.allowThis(s.scaledBalances[msg.sender][asset]);
-        }
-
-        if (!TFHE.isInitialized(s.scaledDebts[msg.sender][asset])) {
-            s.scaledDebts[msg.sender][asset] = TFHE.asEuint64(0);
-            TFHE.allowThis(s.scaledDebts[msg.sender][asset]);
-            TFHE.allow(s.scaledDebts[msg.sender][asset], msg.sender);
-        }
-
-        if (!TFHE.isInitialized(s.userMaxBorrowable[msg.sender])) {
-            s.userMaxBorrowable[msg.sender] = TFHE.asEuint64(0);
-            TFHE.allowThis(s.userMaxBorrowable[msg.sender]);
         }
     }
 
@@ -141,6 +119,7 @@ library LibSupplyRequest {
 
         uint256 unwrappedAmount = amount *
             (10 ** (IERC20Metadata(asset).decimals() - ConfidentialERC20Wrapped(cToken).decimals()));
+
         IERC20(asset).approve(address(s.aavePool), unwrappedAmount);
 
         emit LibAdapterStorage.SupplyCallback(asset, amount, requestId);
@@ -168,36 +147,57 @@ library LibSupplyRequest {
 
         uint256 multiplier = difference / (amount / (10 ** 6));
 
-        // update each user's scaled balances and max borrowable
-        for (uint256 i = 0; i < requests.length; i++) {
-            euint64 newBalance = TFHE.add(
-                s.scaledBalances[requests[i].sender][asset],
-                TFHE.div(TFHE.mul(requests[i].amount, uint64(multiplier)), 1e6)
-            );
-            s.scaledBalances[requests[i].sender][asset] = newBalance;
+        _processStateUpdates(s, requests, multiplier, asset);
 
-            TFHE.allowThis(newBalance);
-            TFHE.allow(newBalance, requests[i].sender);
-
-            (, , , , uint256 ltv, ) = s.aavePool.getUserAccountData(address(this));
-
-            // calculate and update max borrowable
-            euint64 currentBalance = s.scaledBalances[requests[i].sender][asset];
-            s.userMaxBorrowable[requests[i].sender] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
-
-            TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
-            TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
-
-            TFHE.allow(s.userMaxBorrowable[requests[i].sender], requests[i].sender);
-            TFHE.allowThis(s.userMaxBorrowable[requests[i].sender]);
-        }
-
-        emit LibAdapterStorage.FinalizeSupplyRequest(asset, supplyRequestId);
+        emit LibAdapterStorage.FinalizeSupplyRequest(asset, supplyRequestId, multiplier, amount);
 
         // clean up
         delete s.requestIdToSupplyRequests[supplyRequestId];
         delete s.requestIdToRequestData[supplyRequestId];
         delete s.requestIdToAmount[unwrapRequestId];
         delete s.requestIdToUnwrapRequestId[supplyRequestId];
+    }
+
+    function _processStateUpdates(
+        LibAdapterStorage.Storage storage s,
+        LibAdapterStorage.SupplyRequestData[] memory requests,
+        uint256 multiplier,
+        address asset
+    ) internal {
+        // update each user's scaled balances and max borrowable
+        for (uint256 i = 0; i < requests.length; i++) {
+            address sender = requests[i].sender;
+            euint64 amount = requests[i].amount;
+
+            euint64 newBalance = TFHE.add(
+                s.scaledBalances[sender][asset],
+                TFHE.div(TFHE.mul(amount, uint64(multiplier)), 1e6)
+            );
+            s.scaledBalances[sender][asset] = newBalance;
+
+            TFHE.allowThis(newBalance);
+            TFHE.allow(newBalance, sender);
+
+            // calculate and update max borrowable
+            euint64 scaledBalance = s.scaledBalances[sender][asset];
+
+            _setMaxBorrowables(scaledBalance, sender);
+        }
+    }
+
+    function _setMaxBorrowables(euint64 currentBalance, address sender) internal {
+        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
+
+        address[] memory aaveAssets = s.aaveAssets;
+        for (uint256 i = 0; i < aaveAssets.length; i++) {
+            address asset = aaveAssets[i];
+
+            (, uint256 ltv, , , , , , , , ) = s.aaveDataProvider.getReserveConfigurationData(asset);
+
+            s.userMaxBorrowablePerAsset[sender][asset] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
+
+            TFHE.allow(s.userMaxBorrowablePerAsset[sender][asset], sender);
+            TFHE.allowThis(s.userMaxBorrowablePerAsset[sender][asset]);
+        }
     }
 }

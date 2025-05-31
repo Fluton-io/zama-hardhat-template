@@ -162,6 +162,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   await txLoupe.wait();
   console.log("LoupeFacet diamond cut completed.");
 
+  console.log("Initializing encrypted balances...");
+  await adminFacet.initMappings(
+    deployer, // deployer address
+    [addresses[+chainId].AAVE_USDC, addresses[+chainId].AAVE_USDT, addresses[+chainId].AAVE_DAI], // aave usdc, aave usdt, aave dai
+  );
+
   console.log("Setting cToken mapping...");
   await adminFacet.setCTokenAddress(
     [addresses[+chainId].AAVE_USDC, addresses[+chainId].AAVE_USDT, addresses[+chainId].AAVE_DAI], // aave usdc, aave usdt, aave dai
@@ -174,7 +180,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log("CToken mapping set successfully.");
 
   console.log("Setting Aave Pool address...");
-  await adminFacet.setAavePoolAddress(addresses[+chainId].AAVE_POOL);
+  await adminFacet.setAavePoolAddress(addresses[+chainId].AAVE_POOL, addresses[+chainId].AAVE_DATA_PROVIDER);
   console.log("Aave Pool set successfully.");
 
   // 7. (Optional) Set Threshold

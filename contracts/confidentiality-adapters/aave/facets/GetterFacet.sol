@@ -25,9 +25,9 @@ contract GetterFacet {
     }
 
     /// @notice Returns user's max borrowable amount (already confidentially stored)
-    function getMaxBorrowable(address user) external view returns (euint64) {
+    function getMaxBorrowable(address user, address asset) external view returns (euint64) {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
-        return s.userMaxBorrowable[user];
+        return s.userMaxBorrowablePerAsset[user][asset];
     }
 
     /// @notice Returns user's withdrawable amount (supplied - borrowed) in encrypted space

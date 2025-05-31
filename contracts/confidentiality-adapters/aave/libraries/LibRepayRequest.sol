@@ -114,12 +114,6 @@ library LibRepayRequest {
         LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
 
         LibAdapterStorage.RepayRequestData[] memory requests = s.requestIdToRepayRequests[requestId];
-        if (requests.length == 0) {
-            revert LibAdapterStorage.NotEnoughRepayRequest();
-        }
-        if (amount == 0) {
-            revert LibAdapterStorage.AmountIsZero();
-        }
 
         address asset = requests[0].asset;
         address cToken = s.tokenAddressToCTokenAddress[asset];
@@ -203,14 +197,25 @@ library LibRepayRequest {
             TFHE.allow(s.scaledDebts[user][asset], user);
             TFHE.allowThis(s.scaledDebts[user][asset]);
 
-            // update max borrowable
-            (, , , , uint256 ltv, ) = s.aavePool.getUserAccountData(address(this));
-            euint64 currentBalance = s.scaledBalances[user][asset];
+            euint64 scaledBalance = s.scaledBalances[user][asset];
 
-            s.userMaxBorrowable[user] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
+            _setMaxBorrowables(scaledBalance, user);
+        }
+    }
 
-            TFHE.allow(s.userMaxBorrowable[user], user);
-            TFHE.allowThis(s.userMaxBorrowable[user]);
+    function _setMaxBorrowables(euint64 currentBalance, address sender) internal {
+        LibAdapterStorage.Storage storage s = LibAdapterStorage.getStorage();
+
+        address[] memory aaveAssets = s.aaveAssets;
+        for (uint256 i = 0; i < aaveAssets.length; i++) {
+            address asset = aaveAssets[i];
+
+            (, uint256 ltv, , , , , , , , ) = s.aaveDataProvider.getReserveConfigurationData(asset);
+
+            s.userMaxBorrowablePerAsset[sender][asset] = TFHE.div(TFHE.mul(currentBalance, uint64(ltv)), uint64(10000));
+
+            TFHE.allow(s.userMaxBorrowablePerAsset[sender][asset], sender);
+            TFHE.allowThis(s.userMaxBorrowablePerAsset[sender][asset]);
         }
     }
 }
