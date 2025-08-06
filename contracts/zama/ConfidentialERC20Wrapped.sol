@@ -7,6 +7,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuardTransient } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IConfidentialERC20Wrapped } from "./IConfidentialERC20Wrapped.sol";
+import { SepoliaZamaGatewayConfig } from "fhevm/config/ZamaGatewayConfig.sol";
 import "fhevm-contracts/contracts/token/ERC20/ConfidentialERC20.sol";
 
 /**
@@ -16,6 +17,7 @@ import "fhevm-contracts/contracts/token/ERC20/ConfidentialERC20.sol";
  *          All ERC20 tokens must have decimals superior or equal to 6 decimals.
  */
 abstract contract ConfidentialERC20Wrapped is
+    SepoliaZamaGatewayConfig,
     ConfidentialERC20,
     IConfidentialERC20Wrapped,
     ReentrancyGuardTransient,
