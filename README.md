@@ -1,3 +1,5 @@
+## This Repository has been archived. Please check [here](https://github.com/Fluton-io/zama-hardhat-template-v0.7).
+
 # Hardhat Template [![Open in Gitpod][gitpod-badge]][gitpod] [![Github Actions][gha-badge]][gha] [![Hardhat][hardhat-badge]][hardhat] [![License: MIT][license-badge]][license]
 
 [gitpod]: https://gitpod.io/#https://github.com/zama-ai/fhevm-hardhat-template
