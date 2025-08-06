@@ -19,17 +19,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   const constructorArguments = [addresses[+chainId].AAVE_USDC, decryptionDelay];
 
-  const deployed = await deploy("cUSDC", {
+  const deployed = await deploy("cERC20", {
     from: deployer,
     args: constructorArguments,
     log: true,
   });
 
-  console.log(`cUSDC contract: `, deployed.address);
+  console.log(`cERC20 contract: `, deployed.address);
 
   const verificationArgs = {
     address: deployed.address,
-    contract: "contracts/cERC20.sol:cUSDC",
+    contract: "contracts/cERC20.sol:cERC20",
     constructorArguments,
   };
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-
 pragma solidity ^0.8.24;
 
 import "fhevm/lib/TFHE.sol";
@@ -9,7 +8,7 @@ import "./zama/ConfidentialERC20Wrapped.sol";
 /// @notice This contract implements an encrypted ERC20-like token with confidential balances using Zama's FHE library.
 /// @dev It supports typical ERC20 functionality such as transferring tokens, minting, and setting allowances,
 /// @dev but uses encrypted data types.
-contract cUSDC is SepoliaZamaFHEVMConfig, ConfidentialERC20Wrapped {
+contract cERC20 is SepoliaZamaFHEVMConfig, ConfidentialERC20Wrapped {
     event OnUnwrapSuccessHook(uint256 requestId, uint256 amount);
     event OnUnwrapFailHook(uint256 requestId, uint256 amount);
     /// @notice Constructor to initialize the token's name and symbol, and set up the owner
